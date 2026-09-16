@@ -35,3 +35,6 @@ meteo:
     username: ${MQTT_USER:meteo}
     password: ${MQTT_PASSWORD:changeme}
     topic: ${MQTT_TOPIC:meteo/+/up}
+  # 数据模拟器（开发环境默认开启，生产必须置为 false）
+  simulator:
+    enabled: ${SIMULATOR_ENABLED:true}
