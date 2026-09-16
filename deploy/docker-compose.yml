@@ -1,0 +1,71 @@
+name: meteo
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: meteo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
+      MYSQL_DATABASE: meteo
+      MYSQL_USER: meteo
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+
+  redis:
+    image: redis:7
+    container_name: meteo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: meteo-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: meteo
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-changeme}
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # 管理控制台
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: meteo-influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-changeme123}
+      DOCKER_INFLUXDB_INIT_ORG: meteo
+      DOCKER_INFLUXDB_INIT_BUCKET: meteo
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-changeme-influx-admin-token}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+
+  emqx:
+    image: emqx/emqx:5.7
+    container_name: meteo-emqx
+    environment:
+      EMQX_NAME: meteo
+    ports:
+      - "1883:1883"     # MQTT
+      - "8083:8083"     # WebSocket
+      - "18083:18083"   # Dashboard（默认 admin/public）
+    volumes:
+      - emqx_data:/opt/emqx/data
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  influxdb_data:
+  emqx_data:
