@@ -1,0 +1,38 @@
+# ---- Java / Maven (backend) ----
+backend/target/
+*.class
+*.jar
+*.war
+*.log
+
+# ---- Node / Vue (frontend) ----
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- 本地环境配置（含敏感信息，禁止提交）----
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-prod.yml
+*.env
+.env.*
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+!.vscode/settings.json
+.project
+.classpath
+.settings/
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+
+# ---- 临时文件 ----
+*.tmp
+*.swp
+~$*
