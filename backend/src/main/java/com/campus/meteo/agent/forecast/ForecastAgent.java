@@ -71,4 +71,33 @@ public class ForecastAgent {
         fcstWriter.writeFcst(station.getStationCode(), MODEL_STAT, now, series);
         return true;
     }
+
+    /**
+     * 预报回算：按逐日发布时次重演历史预报，产出可用于准确率检验的预报样本
+     * 用途：预报准确率检验（FR-FC-04）需要「过去的预报」与「已发生的实况」配对
+     *
+     * @param days 回算天数（对每个发布时次，仅使用该时刻之前的历史观测）
+     * @return 成功回算的发布次数
+     */
+    public int backtest(Station station, int days) {
+        int success = 0;
+        Instant now = Instant.now();
+        for (int d = days; d >= 1; d--) {
+            Instant issueTime = now.minusSeconds((long) d * 86400);
+            var history = obsReader.queryRange(station.getStationCode(),
+                    issueTime.minusSeconds((long) HISTORY_DAYS * 86400), issueTime);
+            if (history.size() < 3) {
+                log.warn("回算跳过（历史样本不足）: station={}, issue={}", station.getStationCode(), issueTime);
+                continue;
+            }
+            Map<Instant, Map<String, Double>> series = model.forecast(history, FORECAST_HOURS);
+            if (series.isEmpty()) {
+                continue;
+            }
+            fcstWriter.writeFcst(station.getStationCode(), MODEL_STAT, issueTime, series);
+            success++;
+        }
+        log.info("预报回算完成: station={}, 成功发布 {} 次", station.getStationCode(), success);
+        return success;
+    }
 }

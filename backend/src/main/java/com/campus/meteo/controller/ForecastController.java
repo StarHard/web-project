@@ -105,4 +105,22 @@ public class ForecastController {
         }
         return Result.ok(Map.of("total", total, "success", success));
     }
+
+    @Operation(summary = "预报回算（重演历史预报，为准确率检验产出样本）")
+    @PostMapping("/backtest")
+    @PreAuthorize("hasAuthority('forecast:view')")
+    public Result<Map<String, Object>> backtest(@RequestParam(required = false) String stationCode,
+                                                @RequestParam(defaultValue = "3") int days) {
+        days = Math.min(Math.max(days, 1), 7);
+        var stations = stationMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.campus.meteo.entity.Station>()
+                        .eq(com.campus.meteo.entity.Station::getStatus, 1)
+                        .eq(stationCode != null && !stationCode.isBlank(),
+                                com.campus.meteo.entity.Station::getStationCode, stationCode));
+        int issues = 0;
+        for (var station : stations) {
+            issues += forecastAgent.backtest(station, days);
+        }
+        return Result.ok(Map.of("stations", stations.size(), "issues", issues, "days", days));
+    }
 }

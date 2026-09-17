@@ -51,8 +51,10 @@ public class StatisticalForecastModel {
 
         // 1. 小时气候态（小时-of-day → 要素均值）
         Map<String, Map<Integer, Double>> climatology = buildClimatology(sorted);
+        // 1.1 全局均值兜底：历史样本尚不足以覆盖全部钟点（如刚投运的站点）时使用
+        Map<String, Double> globalMeans = buildGlobalMeans(sorted, climatology);
         // 2. 近期距平
-        Map<String, Double> anomaly = buildAnomaly(sorted, climatology);
+        Map<String, Double> anomaly = buildAnomaly(sorted, climatology, globalMeans);
 
         for (int h = 1; h <= hours; h++) {
             Instant target = baseTime.plusSeconds((long) h * 3600);
@@ -61,21 +63,21 @@ public class StatisticalForecastModel {
             Map<String, Double> point = new LinkedHashMap<>();
 
             for (String element : ELEMENTS) {
-                Double clim = climatology.get(element).get(hourOfDay);
-                Double offset = anomaly.get(element);
+                Double clim = resolve(climatology, globalMeans, element, hourOfDay);
                 if (clim == null) {
                     continue;
                 }
+                Double offset = anomaly.get(element);
                 point.put(element, round(offset == null ? clim : clim + offset * decay));
             }
             // 风向：气候态主导方向 + 最近观测微调
-            Double dirClim = climatology.get("wind_dir").get(hourOfDay);
+            Double dirClim = resolve(climatology, globalMeans, "wind_dir", hourOfDay);
             if (dirClim != null) {
                 double blended = blendAngle(dirClim, base.getElements().getOrDefault("wind_dir", dirClim), 0.7);
                 point.put("wind_dir", round(blended));
             }
             // 降水：气候态发生率 × 湿度距平修正
-            Double rainClim = climatology.get("rain").get(hourOfDay);
+            Double rainClim = resolve(climatology, globalMeans, "rain", hourOfDay);
             Double humiOffset = anomaly.get("humi");
             if (rainClim != null) {
                 double baseRate = rainClim > 0.1 ? 0.6 : 0.08;
@@ -85,9 +87,63 @@ public class StatisticalForecastModel {
                 point.put("pop", round(pop));
                 point.put("rain", round(Math.max(0, rain)));
             }
-            result.put(target, point);
+            if (!point.isEmpty()) {
+                result.put(target, point);
+            }
         }
         return result;
+    }
+
+    /** 取值：优先小时气候态，缺失时回退全局均值 */
+    private Double resolve(Map<String, Map<Integer, Double>> climatology, Map<String, Double> globalMeans,
+                           String element, int hourOfDay) {
+        Map<Integer, Double> byHour = climatology.get(element);
+        if (byHour != null) {
+            Double value = byHour.get(hourOfDay);
+            if (value != null) {
+                return value;
+            }
+        }
+        return globalMeans.get(element);
+    }
+
+    /** 全局均值：小时气候态缺失钟点的兜底值（风向按矢量平均） */
+    private Map<String, Double> buildGlobalMeans(List<ObsData> history,
+                                                Map<String, Map<Integer, Double>> climatology) {
+        Map<String, Double> means = new HashMap<>();
+        List<String> allElements = new ArrayList<>(ELEMENTS);
+        allElements.add("rain");
+        for (String element : allElements) {
+            double sum = 0;
+            int count = 0;
+            for (ObsData obs : history) {
+                Double v = obs.getElements().get(element);
+                if (v != null) {
+                    sum += v;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                means.put(element, sum / count);
+            }
+        }
+        // 风向：矢量平均（避免 359°/1° 直接平均出错）
+        double cosSum = 0, sinSum = 0;
+        int dirCount = 0;
+        for (ObsData obs : history) {
+            Double dir = obs.getElements().get("wind_dir");
+            if (dir != null) {
+                cosSum += Math.cos(Math.toRadians(dir));
+                sinSum += Math.sin(Math.toRadians(dir));
+                dirCount++;
+            }
+        }
+        if (dirCount > 0 && (cosSum != 0 || sinSum != 0)) {
+            means.put("wind_dir", (Math.toDegrees(Math.atan2(sinSum, cosSum)) + 360) % 360);
+        } else if (climatology.get("wind_dir") != null && !climatology.get("wind_dir").isEmpty()) {
+            means.put("wind_dir", climatology.get("wind_dir").values().iterator().next());
+        }
+        return means;
     }
 
     /** 构建小时气候态：要素 → 小时-of-day → 均值（风向矢量平均） */
@@ -134,8 +190,9 @@ public class StatisticalForecastModel {
         return climatology;
     }
 
-    /** 近期距平：最近3个时次均值 - 起报小时气候态 */
-    private Map<String, Double> buildAnomaly(List<ObsData> sorted, Map<String, Map<Integer, Double>> climatology) {
+    /** 近期距平：最近3个时次均值 - 起报小时气候态（气候态缺失时用全局均值） */
+    private Map<String, Double> buildAnomaly(List<ObsData> sorted, Map<String, Map<Integer, Double>> climatology,
+                                             Map<String, Double> globalMeans) {
         Map<String, Double> anomaly = new HashMap<>();
         ObsData base = sorted.get(sorted.size() - 1);
         int baseHour = base.getTs().atZone(ZONE).getHour();
@@ -150,7 +207,7 @@ public class StatisticalForecastModel {
                 continue;
             }
             double recentMean = values.stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            Double clim = climatology.get(element).get(baseHour);
+            Double clim = resolve(climatology, globalMeans, element, baseHour);
             if (clim != null) {
                 anomaly.put(element, recentMean - clim);
             }

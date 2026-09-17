@@ -48,22 +48,23 @@ public class VerificationService {
         // 实况按小时聚合
         Map<Long, Map<String, Double>> obsHourly = aggregateHourly(
                 obsReader.queryRange(stationCode, from, now));
-        // 预报序列
-        Map<Instant, Map<String, Double>> fcst = fcstReader.query(stationCode, model, from, now);
+        // 预报序列（全部发布记录，逐条与实况配对）
+        List<FcstReader.FcstPoint> fcstPoints = fcstReader.queryAll(stationCode, model, from, now);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("stationCode", stationCode);
         result.put("model", model);
         result.put("days", days);
         result.put("generatedAt", LocalDateTime.now(ZONE).format(TIME_FMT));
+        result.put("forecastSamples", fcstPoints.size());
 
         // 连续要素评分
         List<Map<String, Object>> elementStats = new ArrayList<>();
         for (String element : CONTINUOUS_ELEMENTS) {
             List<double[]> pairs = new ArrayList<>();
-            for (Map.Entry<Instant, Map<String, Double>> entry : fcst.entrySet()) {
-                Double f = entry.getValue().get(element);
-                Map<String, Double> hourObs = obsHourly.get(truncateToHour(entry.getKey()));
+            for (FcstReader.FcstPoint point : fcstPoints) {
+                Double f = point.elements().get(element);
+                Map<String, Double> hourObs = obsHourly.get(truncateToHour(point.targetTime()));
                 if (f == null || hourObs == null) {
                     continue;
                 }
@@ -80,9 +81,9 @@ public class VerificationService {
 
         // 降水分类评分
         int hits = 0, misses = 0, falseAlarms = 0;
-        for (Map.Entry<Instant, Map<String, Double>> entry : fcst.entrySet()) {
-            Double fRain = entry.getValue().get("rain");
-            Map<String, Double> hourObs = obsHourly.get(truncateToHour(entry.getKey()));
+        for (FcstReader.FcstPoint point : fcstPoints) {
+            Double fRain = point.elements().get("rain");
+            Map<String, Double> hourObs = obsHourly.get(truncateToHour(point.targetTime()));
             if (fRain == null || hourObs == null || !hourObs.containsKey("rain")) {
                 continue;
             }
