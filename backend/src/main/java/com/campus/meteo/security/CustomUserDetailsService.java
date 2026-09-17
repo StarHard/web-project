@@ -32,7 +32,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         }
         List<String> roleCodes = roleMapper.selectRoleCodesByUserId(user.getId());
         List<String> permCodes = permissionMapper.selectPermCodesByUserId(user.getId());
-        return new LoginUser(user.getId(), user.getUsername(), user.getPassword(),
+        return new LoginUser(user.getId(), user.getUsername(), user.getPassword(), user.getRealName(),
                 user.getStatus() == 1, roleCodes, permCodes);
     }
 }

@@ -17,15 +17,17 @@ public class LoginUser implements UserDetails {
     private final Long userId;
     private final String username;
     private final String password;
+    private final String realName;
     private final boolean enabled;
     private final List<String> roleCodes;
     private final List<String> permCodes;
 
-    public LoginUser(Long userId, String username, String password, boolean enabled,
+    public LoginUser(Long userId, String username, String password, String realName, boolean enabled,
                      List<String> roleCodes, List<String> permCodes) {
         this.userId = userId;
         this.username = username;
         this.password = password;
+        this.realName = realName;
         this.enabled = enabled;
         this.roleCodes = roleCodes;
         this.permCodes = permCodes;

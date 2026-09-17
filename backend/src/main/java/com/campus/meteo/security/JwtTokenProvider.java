@@ -93,4 +93,8 @@ public class JwtTokenProvider {
     public long getRefreshExpireSeconds() {
         return refreshExpireDays * 24 * 3600;
     }
+
+    public long getAccessExpireSeconds() {
+        return accessExpireMinutes * 60;
+    }
 }

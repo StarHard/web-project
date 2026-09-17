@@ -97,10 +97,11 @@ public class AuthServiceImpl implements AuthService {
         return LoginResp.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
-                .expiresIn(0)
+                .expiresIn(tokenProvider.getAccessExpireSeconds())
                 .user(LoginResp.UserInfo.builder()
                         .id(user.getUserId())
                         .username(user.getUsername())
+                        .realName(user.getRealName())
                         .roles(user.getRoleCodes())
                         .build())
                 .build();
