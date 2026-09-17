@@ -1,5 +1,6 @@
 package com.campus.meteo.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -23,7 +24,8 @@ public class AlertRule extends BaseEntity {
     /** 判定要素 */
     private String element;
 
-    /** 条件：1大于 2小于 3持续N分钟超限 */
+    /** 条件：1大于 2小于 3持续N分钟超限（condition 为 SQL 保留字，须转义） */
+    @TableField("`condition`")
     private Integer condition;
 
     /** 阈值 */
