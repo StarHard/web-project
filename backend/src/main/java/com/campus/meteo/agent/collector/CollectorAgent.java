@@ -14,7 +14,9 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -65,13 +67,21 @@ public class CollectorAgent {
             options.setPassword(mqttProperties.getPassword().toCharArray());
             options.setAutomaticReconnect(true);
             options.setCleanSession(true);
+            // 断线/重连回调：负责重连后恢复订阅
+            mqttClient.setCallback(new ConnectionCallback());
             mqttClient.connect(options);
-            mqttClient.subscribe(mqttProperties.getTopic(), 1, new UpMessageListener());
+            subscribe();
             log.info("采集Agent已启动, 订阅主题: {}", mqttProperties.getTopic());
         } catch (MqttException e) {
             // 采集链路为系统主干，启动失败直接抛出阻断应用启动
             throw new IllegalStateException("MQTT 连接失败: " + e.getMessage(), e);
         }
+    }
+
+    /** 订阅上行主题（启动时与重连后均需调用） */
+    private void subscribe() throws MqttException {
+        mqttClient.subscribe(mqttProperties.getTopic(), 1, new UpMessageListener());
+        log.info("已订阅上行主题: {}", mqttProperties.getTopic());
     }
 
     @PreDestroy
@@ -170,6 +180,41 @@ public class CollectorAgent {
         @Override
         public void messageArrived(String topic, MqttMessage message) {
             processMessage(topic, message);
+        }
+    }
+
+    /**
+     * 连接回调：
+     * Paho 的 automaticReconnect 只负责重建连接，不会恢复订阅，
+     * 因此必须在 connectComplete 中重新 subscribe，否则 Broker 重启后采集链路会静默断流。
+     */
+    private class ConnectionCallback implements MqttCallbackExtended {
+
+        @Override
+        public void connectComplete(boolean reconnect, String serverURI) {
+            if (reconnect) {
+                log.warn("MQTT 连接已恢复: {}，重新订阅上行主题", serverURI);
+                try {
+                    subscribe();
+                } catch (MqttException e) {
+                    log.error("重连后恢复订阅失败: {}", e.getMessage(), e);
+                }
+            }
+        }
+
+        @Override
+        public void connectionLost(Throwable cause) {
+            log.error("MQTT 连接断开: {}，等待自动重连", cause == null ? "未知原因" : cause.getMessage());
+        }
+
+        @Override
+        public void messageArrived(String topic, MqttMessage message) {
+            processMessage(topic, message);
+        }
+
+        @Override
+        public void deliveryComplete(IMqttDeliveryToken token) {
+            // 采集Agent仅订阅不发布，无需处理
         }
     }
 }
