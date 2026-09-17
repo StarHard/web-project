@@ -38,3 +38,4 @@ meteo:
   # 数据模拟器（开发环境默认开启，生产必须置为 false）
   simulator:
     enabled: ${SIMULATOR_ENABLED:true}
+    interval-ms: ${SIMULATOR_INTERVAL_MS:15000}   # 开发环境15秒一条，加速联调
