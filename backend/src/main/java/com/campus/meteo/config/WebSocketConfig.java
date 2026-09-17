@@ -1,5 +1,6 @@
 package com.campus.meteo.config;
 
+import com.campus.meteo.agent.alert.AlertWebSocketHandler;
 import com.campus.meteo.agent.realtime.RealtimeWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
@@ -17,9 +18,11 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final RealtimeWebSocketHandler realtimeWebSocketHandler;
+    private final AlertWebSocketHandler alertWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(realtimeWebSocketHandler, "/ws/realtime").setAllowedOrigins("*");
+        registry.addHandler(alertWebSocketHandler, "/ws/alert").setAllowedOrigins("*");
     }
 }
