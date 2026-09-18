@@ -36,10 +36,17 @@ public class ObsReader {
     /** 自动按时间跨度选择聚合窗口 */
     private static final String WINDOW_AUTO = "auto";
 
-    /** 质控标记过滤：suspect 不参与对客展示，由人工审核闭环后再回写 */
+    /** 质控标记过滤：纳入全部标记，可疑标记(suspect)在 Java 侧拒绝，避免底层 raw 尖峰泄漏 */
     private static final String QC_FLAG_FILTER =
             "|> filter(fn: (r) => r.qc_flag == \"revised\" or r.qc_flag == \"passed\""
-                    + " or r.qc_flag == \"interpolated\" or r.qc_flag == \"raw\")";
+                    + " or r.qc_flag == \"interpolated\" or r.qc_flag == \"raw\" or r.qc_flag == \"suspect\")";
+
+    /**
+     * 视为「质控未通过」的标记等级上限：raw(1) 与 suspect(0)。
+     * 采集 Agent 先写 raw、质控 Agent 再写判定结果，若查询只过滤 suspect，
+     * 被拒绝的异常尖峰会以 raw 名义泄漏到展示层。
+     */
+    private static final int RANK_UNVERIFIED = 1;
 
     /**
      * 合法聚合窗口：数字 + 单位（s/m/h/d）。
@@ -71,7 +78,7 @@ public class ObsReader {
                   |> sort(columns: ["_time"])
                 """.formatted(properties.getBucket(), start.toString(), stop.toString(),
                 stationCode, QC_FLAG_FILTER);
-        return executeQuery(flux, stationCode, false);
+        return executeQuery(flux, stationCode);
     }
 
     /**
@@ -100,7 +107,7 @@ public class ObsReader {
                   |> sort(columns: ["_time"])
                 """.formatted(properties.getBucket(), start.toString(), stop.toString(),
                 stationCode, QC_FLAG_FILTER, window);
-        return executeQuery(flux, stationCode, true);
+        return executeQuery(flux, stationCode);
     }
 
     /**
@@ -122,7 +129,7 @@ public class ObsReader {
                 """.formatted(properties.getBucket(), stationCode, QC_FLAG_FILTER);
 
         // last() 后各要素可能来自不同时刻，按要素取优先级最高的标记值合并
-        List<ObsData> parts = executeQuery(flux, stationCode, true);
+        List<ObsData> parts = executeQuery(flux, stationCode);
         if (parts.isEmpty()) {
             return null;
         }
@@ -155,6 +162,11 @@ public class ObsReader {
 
     /**
      * 查询站点某要素在指定时间之后的最后一个值（时间一致性检验用）
+     *
+     * 注意：Flux last() 对每个序列表各返回一行（raw 与 passed 各一行），
+     * 必须取 _time 最大的一条。若只取第一条，一旦命中过期的 passed 序列，
+     * 时间一致性检验会拿陈旧值作比较并永久误判，且样本被拒后 passed 序列更加陈旧，
+     * 形成自我强化的误判级联。
      */
     public Double queryLastElementValue(String stationCode, String element, Instant start) {
         String flux = """
@@ -166,10 +178,12 @@ public class ObsReader {
                 """.formatted(properties.getBucket(), start.toString(), stationCode, element);
         try {
             List<FluxTable> tables = client.getQueryApi().query(flux, properties.getOrg());
-            return tables.stream().flatMap(t -> t.getRecords().stream())
-                    .map(r -> (Double) r.getValue())
-                    .filter(v -> v != null)
-                    .findFirst().orElse(null);
+            return tables.stream()
+                    .flatMap(t -> t.getRecords().stream())
+                    .filter(r -> r.getTime() != null && r.getValue() instanceof Number)
+                    .max(Comparator.comparing(FluxRecord::getTime))
+                    .map(r -> ((Number) r.getValue()).doubleValue())
+                    .orElse(null);
         } catch (Exception e) {
             log.warn("InfluxDB 查询失败: station={}, element={}, err={}", stationCode, element, e.getMessage());
             return null;
@@ -207,11 +221,8 @@ public class ObsReader {
 
     /**
      * 执行查询并在 Java 侧聚合为 ObsData 列表
-     *
-     * @param mergeAcrossFlags true 时把同一时刻各质控标记的要素合并，避免某要素仅以较低优先级标记
-     *                         落桶时被整体丢弃（聚合查询下同一要素可能分散在不同标记中）
      */
-    private List<ObsData> executeQuery(String flux, String stationCode, boolean mergeAcrossFlags) {
+    private List<ObsData> executeQuery(String flux, String stationCode) {
         try {
             QueryApi queryApi = client.getQueryApi();
             List<FluxTable> tables = queryApi.query(flux, properties.getOrg());
@@ -235,22 +246,16 @@ public class ObsReader {
                 }
             }
 
-            // 每个时间点取优先级最高的 qc_flag 版本
             List<ObsData> result = new ArrayList<>(byTimeAndFlag.size());
             byTimeAndFlag.forEach((time, byFlag) -> {
+                Map<String, Double> elements = mergeVerifiedElements(byFlag);
+                // 全部要素均未通过质控的时刻不对外展示
+                if (elements.isEmpty()) {
+                    return;
+                }
                 String bestFlag = byFlag.keySet().stream()
                         .max(Comparator.comparingInt(this::flagRank))
                         .orElse("raw");
-                Map<String, Double> elements;
-                if (mergeAcrossFlags) {
-                    // 按标记优先级从低到高覆盖：低优先级先写入，高优先级最终胜出，且不丢要素
-                    elements = new LinkedHashMap<>();
-                    byFlag.entrySet().stream()
-                            .sorted(Comparator.comparingInt(entry -> flagRank(entry.getKey())))
-                            .forEach(entry -> elements.putAll(entry.getValue()));
-                } else {
-                    elements = byFlag.get(bestFlag);
-                }
                 result.add(ObsData.builder()
                         .stationCode(stationCode)
                         .ts(time)
@@ -265,7 +270,30 @@ public class ObsReader {
         }
     }
 
-    /** 质控标记优先级：revised > passed > interpolated > raw（suspect 不参与对客展示） */
+    /**
+     * 合并同一时刻各质控标记的要素值，并剔除未通过质控的部分。
+     *
+     * 同一要素可能以多种标记共存（聚合查询下同一小时桶内各标记分别聚合），
+     * 按标记优先级取值，高优先级胜出；若某要素只有 raw / suspect 版本，
+     * 说明质控未通过或判定为可疑，按缺测处理，不能以 raw 名义展示。
+     */
+    private Map<String, Double> mergeVerifiedElements(Map<String, Map<String, Double>> byFlag) {
+        Map<String, Double> elements = new LinkedHashMap<>();
+        Map<String, Integer> elementRank = new HashMap<>();
+        byFlag.forEach((flag, values) -> {
+            int rank = flagRank(flag);
+            values.forEach((element, value) -> {
+                if (rank >= elementRank.getOrDefault(element, -1)) {
+                    elementRank.put(element, rank);
+                    elements.put(element, value);
+                }
+            });
+        });
+        elements.keySet().removeIf(element -> elementRank.getOrDefault(element, -1) <= RANK_UNVERIFIED);
+        return elements;
+    }
+
+    /** 质控标记优先级：revised > passed > interpolated > raw > suspect（低于等于 raw 视为未通过质控） */
     private int flagRank(String flag) {
         return switch (flag == null ? "" : flag) {
             case "revised" -> 4;
