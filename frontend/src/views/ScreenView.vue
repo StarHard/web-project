@@ -7,7 +7,13 @@ import '@kjgl77/datav-vue3/dist/style.css'
 import AppChart from '@/components/AppChart.vue'
 import { pageStations, realtimeCurve, stationMap, type Station, type StationMapPoint } from '@/api/monitor'
 import { alertStat, pageAlerts, type AlertRecord } from '@/api/alert'
-import { ALERT_LEVEL_COLORS, ALERT_LEVEL_LABELS, formatTime, round } from '@/utils/format'
+import {
+  ALERT_LEVEL_COLORS,
+  ALERT_LEVEL_LABELS,
+  elementLabel,
+  formatTime,
+  round
+} from '@/utils/format'
 
 const router = useRouter()
 
@@ -34,8 +40,8 @@ const COLOR_WARN = ['#f59e0b', '#ef4444']
 
 /** 大屏为固定画布（1080 高），面板高度按可用空间算好，避免 flex 撑不开导致 DataV 组件测到 0 高度 */
 const PANEL_HEIGHT = {
-  metrics: 300,
-  stations: 634,
+  metrics: 340,
+  stations: 594,
   trend: 467,
   rain: 467,
   alerts: 534,
@@ -210,20 +216,35 @@ function flopConfig(value: number | null, unit: string, color: string) {
   }
 }
 
+/**
+ * 大屏榜单列宽有限，把告警内容压缩为「类型 + 要素 + 触发值 > 阈值」。
+ * 原始内容形如「大风蓝色预警: CAMPUS01站 wind_speed=10.3 超过阈值 10.0」，
+ * 其中站点与等级已由榜单其它列承载，重复展示只会挤掉真正有效的信息。
+ */
+function alertSummary(content: string): string {
+  const hit = /([a-z_]+)=([\d.-]+)\s*超过阈值\s*([\d.-]+)/.exec(content)
+  if (!hit) {
+    return content.length > 18 ? `${content.slice(0, 18)}…` : content
+  }
+  const type = /^(.{2,4}?)预警/.exec(content)?.[1] ?? ''
+  return `${type} ${elementLabel(hit[1])} ${hit[2]} > ${hit[3]}`.trim()
+}
+
 const alertBoardConfig = computed(() => ({
   header: ['站点', '等级', '告警内容', '时间'],
   data: alerts.value.map((item) => [
     stationName(item.stationId),
     ALERT_LEVEL_LABELS[item.level] ?? '--',
-    item.content,
-    formatTime(item.alertTime)
+    alertSummary(item.content),
+    // 榜单列宽有限，仅保留 HH:mm —— 大屏关注的是当日进行中的告警
+    formatTime(item.alertTime).slice(-5)
   ]),
   rowNum: 6,
   headerBGC: 'rgba(34,211,238,0.12)',
   oddRowBGC: 'rgba(255,255,255,0.02)',
   evenRowBGC: 'transparent',
   headerHeight: 38,
-  columnWidth: [100, 55, 165, 95],
+  columnWidth: [120, 50, 195, 60],
   align: ['left', 'center', 'left', 'center'],
   waitTime: 3000
 }))
