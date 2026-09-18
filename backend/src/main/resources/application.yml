@@ -31,6 +31,12 @@ server:
   servlet:
     context-path: /api/v1
 
+# 业务自定义配置
+meteo:
+  report:
+    # 统计报表文件存储目录（团队本地开发落地到仓库内，已被 .gitignore 忽略）
+    dir: ./reports
+
 logging:
   level:
     com.campus.meteo: debug
