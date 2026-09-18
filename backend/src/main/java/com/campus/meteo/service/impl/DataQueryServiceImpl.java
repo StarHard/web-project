@@ -46,8 +46,11 @@ public class DataQueryServiceImpl implements DataQueryService {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final ZoneId ZONE = ZoneId.systemDefault();
 
-    /** 累积型要素：聚合与统计取累计值，其余取平均 */
-    private static final Set<String> CUMULATIVE_ELEMENTS = Set.of("rain", "evap");
+    /**
+     * 累积型要素：聚合与统计取累计值。
+     * rain 的口径是雨强（mm/h），聚合取均值而非求和，否则小时值会被累加放大。
+     */
+    private static final Set<String> CUMULATIVE_ELEMENTS = Set.of("evap");
 
     private static final Set<String> GRANULARITIES = Set.of("min", "hour", "day");
 

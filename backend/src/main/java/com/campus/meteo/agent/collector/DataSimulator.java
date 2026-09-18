@@ -32,17 +32,26 @@ public class DataSimulator {
     /** 站点游走状态：stationCode → 当前各要素值 */
     private final Map<String, Map<String, Double>> state = new ConcurrentHashMap<>();
 
-    /** 要素基线与游走步长：[下限, 上限, 每步最大变化] */
+    /**
+     * 要素基线与游走步长：[下限, 上限, 每步最大变化]
+     * 说明：降水不参与随机游走，改由下方按「间歇性降水事件」单独生成——
+     * 随机游走会让每个时次都有降水，24h 累计降水将出现数百毫米的荒谬值。
+     */
     private static final Map<String, double[]> PROFILE = Map.of(
             "temp", new double[]{15, 35, 0.8},
             "humi", new double[]{30, 95, 2.0},
             "pres", new double[]{990, 1030, 0.5},
             "wind_speed", new double[]{0, 15, 1.5},
             "wind_dir", new double[]{0, 360, 20},
-            "rain", new double[]{0, 5, 1.0},
             "rad", new double[]{0, 800, 80},
             "vis", new double[]{3, 30, 2.0},
             "evap", new double[]{0, 1, 0.1});
+
+    /** 降水事件发生概率 */
+    private static final double RAIN_PROBABILITY = 0.12;
+    /** 有雨时的雨强区间（mm/h） */
+    private static final double RAIN_MIN = 0.5;
+    private static final double RAIN_MAX = 6.0;
 
     public DataSimulator(CollectorAgent collectorAgent) {
         this.collectorAgent = collectorAgent;
@@ -72,6 +81,11 @@ public class DataSimulator {
             log.info("模拟器注入异常气温尖峰: station={}, value={}", stationCode, temp);
         }
         next.put("temp", temp);
+        // 降水：间歇性事件，单位为雨强 mm/h，多数时次为 0
+        double rain = random.nextDouble() < RAIN_PROBABILITY
+                ? Math.round((RAIN_MIN + random.nextDouble() * (RAIN_MAX - RAIN_MIN)) * 10) / 10.0
+                : 0.0;
+        next.put("rain", rain);
         state.put(stationCode, next);
 
         String payload = """
