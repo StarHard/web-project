@@ -36,6 +36,9 @@ meteo:
   report:
     # 统计报表文件存储目录（团队本地开发落地到仓库内，已被 .gitignore 忽略）
     dir: ./reports
+  export:
+    # 异步导出文件存储目录
+    dir: ./exports
 
 logging:
   level:
