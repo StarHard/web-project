@@ -3,15 +3,21 @@ package com.campus.meteo.controller;
 import com.campus.meteo.agent.forecast.ForecastAgent;
 import com.campus.meteo.agent.forecast.VerificationService;
 import com.campus.meteo.common.result.Result;
+import com.campus.meteo.dto.ForecastCompareResp;
 import com.campus.meteo.dto.ForecastResp;
+import com.campus.meteo.dto.ForecastRevisionReq;
 import com.campus.meteo.influx.FcstReader;
 import com.campus.meteo.mapper.StationMapper;
+import com.campus.meteo.service.ForecastService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,6 +44,7 @@ public class ForecastController {
     private final FcstReader fcstReader;
     private final VerificationService verificationService;
     private final ForecastAgent forecastAgent;
+    private final ForecastService forecastService;
     private final StationMapper stationMapper;
 
     @Operation(summary = "站点预报产品（0-72h 逐小时）")
@@ -122,5 +129,21 @@ public class ForecastController {
             issues += forecastAgent.backtest(station, days);
         }
         return Result.ok(Map.of("stations", stations.size(), "issues", issues, "days", days));
+    }
+
+    @Operation(summary = "多模型预报对比曲线（stat/ml/manual）")
+    @GetMapping("/model-compare")
+    @PreAuthorize("hasAuthority('forecast:view')")
+    public Result<ForecastCompareResp> modelCompare(@RequestParam String stationCode,
+                                                    @RequestParam(defaultValue = "temp") String element,
+                                                    @RequestParam(defaultValue = "72") int range) {
+        return Result.ok(forecastService.compare(stationCode, element, range));
+    }
+
+    @Operation(summary = "预报订正（路径 id 为预报目标时刻的 epoch 秒）")
+    @PostMapping("/{id}/revisions")
+    @PreAuthorize("hasAuthority('forecast:order')")
+    public Result<Long> revise(@PathVariable long id, @Valid @RequestBody ForecastRevisionReq req) {
+        return Result.ok(forecastService.revise(id, req));
     }
 }

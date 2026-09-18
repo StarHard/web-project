@@ -84,4 +84,34 @@ public class FcstReader {
             return List.of();
         }
     }
+
+    /**
+     * 查询站点近 30 天内出现过的模型标识（供多模型对比选择）
+     * 范围限定 30 天，遵循「禁止无界查询」约定。
+     */
+    public List<String> queryModels(String stationCode) {
+        String flux = """
+                from(bucket: "%s")
+                  |> range(start: -30d)
+                  |> filter(fn: (r) => r._measurement == "fcst" and r.station_code == "%s")
+                  |> keep(columns: ["model"])
+                  |> group()
+                  |> distinct(column: "model")
+                """.formatted(properties.getBucket(), stationCode);
+        try {
+            List<FluxTable> tables = client.getQueryApi().query(flux, properties.getOrg());
+            List<String> models = new ArrayList<>();
+            for (FluxTable table : tables) {
+                for (FluxRecord record : table.getRecords()) {
+                    if (record.getValue() instanceof String value && !models.contains(value)) {
+                        models.add(value);
+                    }
+                }
+            }
+            return models;
+        } catch (Exception e) {
+            log.error("预报模型清单查询异常: station={}, err={}", stationCode, e.getMessage(), e);
+            return List.of();
+        }
+    }
 }
