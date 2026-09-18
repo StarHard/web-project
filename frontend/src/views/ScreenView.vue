@@ -50,38 +50,6 @@ const PANEL_HEIGHT = {
 
 const REFRESH_MS = 60_000
 
-/**
- * 观测点按小时聚合（取小时均值）。
- * 直接使用分钟级原始点会在 time 轴上画出密集锯齿，大屏最显眼的位置反而是最乱的图。
- */
-function hourlyMean(
-  points: ReadonlyArray<{ ts: string; elements: Record<string, number> }>
-): Array<{ ts: string; elements: Record<string, number> }> {
-  const buckets = new Map<number, { sum: Record<string, number>; count: Record<string, number> }>()
-  points.forEach((point) => {
-    const hour = Math.floor(new Date(point.ts).getTime() / 3600_000)
-    let bucket = buckets.get(hour)
-    if (!bucket) {
-      bucket = { sum: {}, count: {} }
-      buckets.set(hour, bucket)
-    }
-    Object.entries(point.elements ?? {}).forEach(([element, value]) => {
-      if (typeof value !== 'number') return
-      bucket!.sum[element] = (bucket!.sum[element] ?? 0) + value
-      bucket!.count[element] = (bucket!.count[element] ?? 0) + 1
-    })
-  })
-  return [...buckets.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([hour, bucket]) => {
-      const elements: Record<string, number> = {}
-      Object.entries(bucket.sum).forEach(([element, sum]) => {
-        elements[element] = sum / (bucket.count[element] || 1)
-      })
-      return { ts: new Date(hour * 3600_000).toISOString(), elements }
-    })
-}
-
 /** 全网平均要素值 */
 const averages = computed(() => {
   const bucket: Record<string, number[]> = {}
@@ -269,15 +237,15 @@ async function loadData(): Promise<void> {
   const entries = await Promise.all(
     stationPage.list.map(async (station) => {
       try {
-        const curve = await realtimeCurve(station.stationCode, 24)
+        const curve = await realtimeCurve(station.stationCode, 24, '1h')
         return [station.stationCode, curve] as const
       } catch {
         return [station.stationCode, []] as const
       }
     })
   )
-  // 聚合到小时后入库，趋势平滑、降水累计口径正确（小时均值 × 1h 即该小时降水量）
-  curves.value = Object.fromEntries(entries.map(([code, points]) => [code, hourlyMean(points)]))
+  // 服务端按小时聚合，趋势平滑、降水累计口径正确（小时均值 × 1h 即该小时降水量）
+  curves.value = Object.fromEntries(entries)
 }
 
 let refreshTimer: number | undefined

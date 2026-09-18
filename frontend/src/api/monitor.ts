@@ -121,6 +121,12 @@ export interface ObsPoint {
   qcFlag?: string
 }
 
-export function realtimeCurve(stationCode: string, hours = 24) {
-  return request<ObsPoint[]>({ url: '/realtime/curve', params: { stationCode, hours } })
+/**
+ * 站点要素曲线
+ *
+ * granularity 决定服务端聚合窗口（raw/5m/15m/1h/1d/auto），默认 auto 按时间跨度自动选择。
+ * 聚合下推到 InfluxDB 后，24h 数据从 5760 个原始点降到约 96 点，避免数十倍冗余传输。
+ */
+export function realtimeCurve(stationCode: string, hours = 24, granularity = 'auto') {
+  return request<ObsPoint[]>({ url: '/realtime/curve', params: { stationCode, hours, granularity } })
 }

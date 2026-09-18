@@ -52,11 +52,13 @@ public class RealtimeController {
         return Result.ok(data);
     }
 
-    @Operation(summary = "站点要素曲线（最近N小时）")
+    @Operation(summary = "站点要素曲线（最近N小时，支持聚合）")
     @GetMapping("/curve")
     public Result<Object> curve(@RequestParam String stationCode,
-                                @RequestParam(defaultValue = "24") int hours) {
+                                @RequestParam(defaultValue = "24") int hours,
+                                @RequestParam(defaultValue = "auto") String granularity) {
+        hours = Math.min(Math.max(hours, 1), 168);
         Instant start = Instant.now().minusSeconds((long) hours * 3600);
-        return Result.ok(obsReader.queryRange(stationCode, start, Instant.now()));
+        return Result.ok(obsReader.queryRangeAggregated(stationCode, start, Instant.now(), granularity));
     }
 }
