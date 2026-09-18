@@ -254,8 +254,7 @@ async function handleLogout(): Promise<void> {
   gap: 14px;
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
-  background: rgba(10, 18, 33, 0.6);
-  backdrop-filter: blur(6px);
+  background: var(--bg-panel);
 }
 
 .crumb {

@@ -69,14 +69,19 @@ const statOption = computed<EChartsOption>(() => {
   }
 })
 
-const levelCards = computed(() =>
-  [1, 2, 3, 4].map((level) => ({
-    level,
-    label: ALERT_LEVEL_LABELS[level],
-    color: ALERT_LEVEL_COLORS[level],
-    count: statData.value?.byLevel?.[String(level)] ?? 0
-  }))
-)
+const levelCards = computed(() => {
+  const total = statData.value?.total ?? 0
+  return [1, 2, 3, 4].map((level) => {
+    const count = statData.value?.byLevel?.[String(level)] ?? 0
+    return {
+      level,
+      label: ALERT_LEVEL_LABELS[level],
+      color: ALERT_LEVEL_COLORS[level],
+      count,
+      ratio: total > 0 ? Math.round((count / total) * 100) : 0
+    }
+  })
+})
 
 async function loadStations(): Promise<void> {
   const page = await pageStations({ pageNum: 1, pageSize: 100 })
@@ -149,7 +154,10 @@ onMounted(async () => {
     <div class="page-header">
       <div>
         <h1 class="page-title">灾害告警</h1>
-        <p class="page-subtitle">阈值触发、等级升级与解除记录，支持订阅推送</p>
+        <p class="page-subtitle">
+          阈值触发、等级升级与解除记录，支持订阅推送 · 累计告警
+          <strong style="color: var(--text)">{{ statData?.total ?? 0 }}</strong> 条
+        </p>
       </div>
       <div class="row">
         <button class="btn" @click="showSubscribe = true">我的订阅（{{ subscribes.length }}）</button>
@@ -157,11 +165,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="grid grid-4" style="margin-bottom: 16px">
+    <div class="grid grid-metric" style="margin-bottom: 16px">
       <div v-for="card in levelCards" :key="card.level" class="panel metric">
         <div class="metric-label">{{ card.label }}预警</div>
         <div class="metric-value" :style="{ color: card.color }">{{ card.count }}</div>
-        <div class="metric-foot">累计告警 {{ statData?.total ?? 0 }} 条</div>
+        <div class="metric-foot">占比 {{ card.ratio }}%</div>
       </div>
     </div>
 

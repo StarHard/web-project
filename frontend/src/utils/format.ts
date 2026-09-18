@@ -9,7 +9,7 @@ export const ELEMENT_UNITS: Record<string, string> = {
   pres: 'hPa',
   wind_speed: 'm/s',
   wind_dir: '°',
-  rain: 'mm',
+  rain: 'mm/h',
   rad: 'W/m²',
   vis: 'km',
   evap: 'mm',
@@ -84,12 +84,32 @@ export function formatElementValue(element: string, value?: number | null): stri
   return `${value}${unit}`
 }
 
+/**
+ * 统一解析后端返回的时间。
+ * ISO 串（含 T 分隔符）必须走原生解析——早先统一做 replace(/-/g,'/') 会把
+ * "2026-09-17T11:57:34" 破坏成无效格式，导致页面直接显示原始 ISO 字符串。
+ */
+function toDate(value: string | number | Date): Date {
+  if (value instanceof Date) {
+    return value
+  }
+  if (typeof value === 'number') {
+    return new Date(value)
+  }
+  const native = new Date(value)
+  if (!Number.isNaN(native.getTime())) {
+    return native
+  }
+  // 回退：兼容 Safari 对 "yyyy-MM-dd HH:mm:ss" 的解析差异
+  return new Date(value.replace(/-/g, '/'))
+}
+
 /** 时间字符串 → yyyy-MM-dd HH:mm */
 export function formatTime(value?: string | number | Date | null, withSeconds = false): string {
   if (!value) {
     return '--'
   }
-  const date = value instanceof Date ? value : new Date(typeof value === 'string' ? value.replace(/-/g, '/') : value)
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) {
     return String(value)
   }
@@ -103,7 +123,7 @@ export function formatRelative(value?: string | null): string {
   if (!value) {
     return '--'
   }
-  const date = new Date(value.replace(/-/g, '/'))
+  const date = toDate(value)
   if (Number.isNaN(date.getTime())) {
     return String(value)
   }

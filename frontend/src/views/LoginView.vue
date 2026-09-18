@@ -84,12 +84,10 @@ async function submit(): Promise<void> {
 
 .login-visual h1 {
   font-size: 34px;
+  font-weight: 600;
   margin: 0 0 14px;
   letter-spacing: 1px;
-  background: linear-gradient(90deg, #e8eefb, #7dd3fc);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text);
 }
 
 .login-visual p {

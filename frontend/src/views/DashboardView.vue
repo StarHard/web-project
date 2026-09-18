@@ -35,12 +35,21 @@ const latestElements = computed<Record<string, number>>(() => {
   return curveData.value[curveData.value.length - 1].elements ?? {}
 })
 
-const metrics = computed(() => ['temp', 'humi', 'pres', 'wind_speed'].map((element) => ({
-  element,
-  label: elementLabel(element),
-  unit: ELEMENT_UNITS[element] ?? '',
-  value: round(latestElements.value[element] ?? null, 1)
-})))
+const metrics = computed(() =>
+  ['temp', 'humi', 'pres', 'wind_speed'].map((element) => {
+    const values = curveData.value
+      .map((point) => point.elements?.[element])
+      .filter((value): value is number => typeof value === 'number')
+    return {
+      element,
+      label: elementLabel(element),
+      unit: ELEMENT_UNITS[element] ?? '',
+      value: round(latestElements.value[element] ?? null, 1),
+      min: values.length ? round(Math.min(...values), 1) : null,
+      max: values.length ? round(Math.max(...values), 1) : null
+    }
+  })
+)
 
 const observedAt = computed(() => {
   const last = curveData.value[curveData.value.length - 1]
@@ -148,8 +157,10 @@ watch(autoRefresh, setupTimer)
       <div>
         <h1 class="page-title">实时监测</h1>
         <p class="page-subtitle">
-          数据更新于 {{ observedAt }}
-          <span v-if="currentStationInfo"> · {{ currentStationInfo.name }}</span>
+          <span v-if="currentStationInfo">{{ currentStationInfo.name }} · </span>
+          {{ currentStationInfo?.onlineFlag === 1 ? '在线' : '离线' }}
+          <span v-if="currentStationInfo"> · 最后上报 {{ formatRelative(currentStationInfo.lastReportTime) }}</span>
+          · 数据更新于 {{ observedAt }}
         </p>
       </div>
       <div class="row">
@@ -171,19 +182,14 @@ watch(autoRefresh, setupTimer)
       </div>
     </div>
 
-    <div class="grid grid-4">
+    <div class="grid grid-metric">
       <div v-for="metric in metrics" :key="metric.element" class="panel metric">
         <div class="metric-label">{{ metric.label }}</div>
         <div class="metric-value">
           {{ metric.value ?? '--' }}<span class="metric-unit">{{ metric.unit }}</span>
         </div>
         <div class="metric-foot">
-          <span v-if="currentStationInfo" :class="currentStationInfo.onlineFlag === 1 ? 'tag tag-online' : 'tag tag-offline'">
-            {{ currentStationInfo.onlineFlag === 1 ? '在线' : '离线' }}
-          </span>
-          <span style="margin-left: 8px">
-            最后上报 {{ formatRelative(currentStationInfo?.lastReportTime) }}
-          </span>
+          24h 区间 {{ metric.min ?? '--' }} ~ {{ metric.max ?? '--' }}
         </div>
       </div>
     </div>

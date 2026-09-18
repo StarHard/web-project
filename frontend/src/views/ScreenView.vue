@@ -28,7 +28,53 @@ function updateScale(): void {
   scale.value = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT)
 }
 
+/** DataV 边框配色常量，避免内联数组在每次渲染时重建 */
+const COLOR_CYAN = ['#22d3ee', '#3b82f6']
+const COLOR_WARN = ['#f59e0b', '#ef4444']
+
+/** 大屏为固定画布（1080 高），面板高度按可用空间算好，避免 flex 撑不开导致 DataV 组件测到 0 高度 */
+const PANEL_HEIGHT = {
+  metrics: 300,
+  stations: 634,
+  trend: 467,
+  rain: 467,
+  alerts: 534,
+  levels: 400
+} as const
+
 const REFRESH_MS = 60_000
+
+/**
+ * 观测点按小时聚合（取小时均值）。
+ * 直接使用分钟级原始点会在 time 轴上画出密集锯齿，大屏最显眼的位置反而是最乱的图。
+ */
+function hourlyMean(
+  points: ReadonlyArray<{ ts: string; elements: Record<string, number> }>
+): Array<{ ts: string; elements: Record<string, number> }> {
+  const buckets = new Map<number, { sum: Record<string, number>; count: Record<string, number> }>()
+  points.forEach((point) => {
+    const hour = Math.floor(new Date(point.ts).getTime() / 3600_000)
+    let bucket = buckets.get(hour)
+    if (!bucket) {
+      bucket = { sum: {}, count: {} }
+      buckets.set(hour, bucket)
+    }
+    Object.entries(point.elements ?? {}).forEach(([element, value]) => {
+      if (typeof value !== 'number') return
+      bucket!.sum[element] = (bucket!.sum[element] ?? 0) + value
+      bucket!.count[element] = (bucket!.count[element] ?? 0) + 1
+    })
+  })
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([hour, bucket]) => {
+      const elements: Record<string, number> = {}
+      Object.entries(bucket.sum).forEach(([element, sum]) => {
+        elements[element] = sum / (bucket.count[element] || 1)
+      })
+      return { ts: new Date(hour * 3600_000).toISOString(), elements }
+    })
+}
 
 /** 全网平均要素值 */
 const averages = computed(() => {
@@ -209,7 +255,8 @@ async function loadData(): Promise<void> {
       }
     })
   )
-  curves.value = Object.fromEntries(entries)
+  // 聚合到小时后入库，趋势平滑、降水累计口径正确（小时均值 × 1h 即该小时降水量）
+  curves.value = Object.fromEntries(entries.map(([code, points]) => [code, hourlyMean(points)]))
 }
 
 let refreshTimer: number | undefined
@@ -248,71 +295,91 @@ onBeforeUnmount(() => {
 
       <main class="screen-body">
         <section class="col col-left">
-          <BorderBox1 class="box" :color="['#22d3ee', '#3b82f6']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">全网实时指标</div>
-            <div class="metrics">
-              <div class="metric">
-                <span class="metric-name">气温</span>
-                <DigitalFlop :config="flopConfig(averages.temp, '℃', '#22d3ee')" />
-              </div>
-              <div class="metric">
-                <span class="metric-name">湿度</span>
-                <DigitalFlop :config="flopConfig(averages.humi, '%', '#a78bfa')" />
-              </div>
-              <div class="metric">
-                <span class="metric-name">风速</span>
-                <DigitalFlop :config="flopConfig(averages.wind_speed, 'm/s', '#34d399')" />
-              </div>
-              <div class="metric">
-                <span class="metric-name">24h降水</span>
-                <DigitalFlop :config="flopConfig(averages.rain, 'mm', '#f59e0b')" />
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.metrics + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">全网实时指标</div>
+              <div class="metrics">
+                <div class="metric">
+                  <span class="metric-name">气温</span>
+                  <DigitalFlop :config="flopConfig(averages.temp, '℃', '#22d3ee')" />
+                </div>
+                <div class="metric">
+                  <span class="metric-name">湿度</span>
+                  <DigitalFlop :config="flopConfig(averages.humi, '%', '#a78bfa')" />
+                </div>
+                <div class="metric">
+                  <span class="metric-name">风速</span>
+                  <DigitalFlop :config="flopConfig(averages.wind_speed, 'm/s', '#34d399')" />
+                </div>
+                <div class="metric">
+                  <span class="metric-name">雨强</span>
+                  <DigitalFlop :config="flopConfig(averages.rain, 'mm/h', '#f59e0b')" />
+                </div>
               </div>
             </div>
           </BorderBox1>
 
-          <BorderBox1 class="box flex-1" :color="['#22d3ee', '#3b82f6']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">
-              站点状态
-              <span class="box-tag">在线 {{ onlineCount }}/{{ mapPoints.length }}</span>
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.stations + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">
+                站点状态
+                <span class="box-tag">在线 {{ onlineCount }}/{{ mapPoints.length }}</span>
+              </div>
+              <ul class="station-list">
+                <li v-for="point in mapPoints" :key="point.id">
+                  <span class="dot" :class="{ on: point.onlineFlag === 1 }"></span>
+                  <span class="station-name">{{ point.name }}</span>
+                  <span v-if="point.alertLevel > 0" :style="{ color: ALERT_LEVEL_COLORS[point.alertLevel], fontSize: '12px' }">
+                    {{ ALERT_LEVEL_LABELS[point.alertLevel] }}
+                  </span>
+                  <span v-else class="station-idle">{{ point.stationCode }}</span>
+                </li>
+              </ul>
             </div>
-            <ul class="station-list">
-              <li v-for="point in mapPoints" :key="point.id">
-                <span class="dot" :class="{ on: point.onlineFlag === 1 }"></span>
-                <span class="station-name">{{ point.name }}</span>
-                <span v-if="point.alertLevel > 0" :style="{ color: ALERT_LEVEL_COLORS[point.alertLevel], fontSize: '12px' }">
-                  {{ ALERT_LEVEL_LABELS[point.alertLevel] }}
-                </span>
-                <span v-else class="station-idle">{{ point.stationCode }}</span>
-              </li>
-            </ul>
           </BorderBox1>
         </section>
 
         <section class="col col-center">
-          <BorderBox1 class="box flex-1" :color="['#22d3ee', '#3b82f6']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">多站点气温趋势（近 24h）</div>
-            <AppChart v-if="Object.keys(curves).length" :option="trendOption" height="100%" />
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.trend + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">多站点气温趋势（近 24h · 小时均值）</div>
+              <div class="chart-area">
+                <AppChart v-if="Object.keys(curves).length" :option="trendOption" height="100%" />
+              </div>
+            </div>
           </BorderBox1>
 
-          <BorderBox1 class="box flex-1" :color="['#22d3ee', '#3b82f6']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">各站点累计降水（近 24h）</div>
-            <AppChart v-if="rainRanking.length" :option="rainOption" height="100%" />
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.rain + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">各站点累计降水（近 24h）</div>
+              <div class="chart-area">
+                <AppChart v-if="rainRanking.length" :option="rainOption" height="100%" />
+              </div>
+            </div>
           </BorderBox1>
         </section>
 
         <section class="col col-right">
-          <BorderBox1 class="box flex-13" :color="['#f59e0b', '#ef4444']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">
-              进行中告警
-              <span class="box-tag warn">{{ alertingCount }} 个站点告警中</span>
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.alerts + 'px' }" :color="COLOR_WARN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">
+                进行中告警
+                <span class="box-tag warn">{{ alertingCount }} 个站点告警中</span>
+              </div>
+              <div class="chart-area">
+                <ScrollBoard v-if="alerts.length" :config="alertBoardConfig" class="board" />
+                <div v-else class="board-empty">当前无进行中告警</div>
+              </div>
             </div>
-            <ScrollBoard v-if="alerts.length" :config="alertBoardConfig" class="board" />
-            <div v-else class="board-empty">当前无进行中告警</div>
           </BorderBox1>
 
-          <BorderBox1 class="box flex-1" :color="['#22d3ee', '#3b82f6']" background-color="rgba(8,20,38,0.6)">
-            <div class="box-head">告警等级分布</div>
-            <AppChart :option="levelOption" height="100%" />
+          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.levels + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
+            <div class="box-inner">
+              <div class="box-head">告警等级分布</div>
+              <div class="chart-area">
+                <AppChart :option="levelOption" height="100%" />
+              </div>
+            </div>
           </BorderBox1>
         </section>
       </main>
@@ -372,11 +439,9 @@ onBeforeUnmount(() => {
 .header-center h1 {
   margin: 0;
   font-size: 30px;
+  font-weight: 600;
   letter-spacing: 4px;
-  background: linear-gradient(90deg, #22d3ee, #e8eefb, #3b82f6);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #e8eefb;
 }
 
 .header-center p {
@@ -435,18 +500,23 @@ onBeforeUnmount(() => {
 }
 
 .box {
-  padding: 44px 16px 16px;
   min-height: 0;
+}
+
+/* 面板内层承载 padding 与 flex 布局：直接作用在 DataV 根元素上会让其内容区测不到高度 */
+.box-inner {
+  height: 100%;
   display: flex;
   flex-direction: column;
+  padding: 42px 16px 14px;
+  overflow: hidden;
 }
 
-.flex-1 {
+/* 图表 / 榜单区域占满剩余高度 */
+.chart-area {
   flex: 1;
-}
-
-.flex-13 {
-  flex: 1.3;
+  min-height: 0;
+  position: relative;
 }
 
 .box-head {
@@ -499,6 +569,7 @@ onBeforeUnmount(() => {
   padding: 0;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
 .station-list li {
