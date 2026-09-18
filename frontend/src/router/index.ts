@@ -92,6 +92,12 @@ const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/screen',
+    name: 'screen',
+    component: () => import('@/views/ScreenView.vue'),
+    meta: { title: '大屏看板' }
+  },
+  {
     path: '/403',
     name: 'forbidden',
     component: () => import('@/views/ForbiddenView.vue'),
