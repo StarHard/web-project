@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -34,20 +35,29 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final ObjectMapper objectMapper;
 
-    /** 白名单：登录/刷新、公开实时数据、文档、健康检查 */
+    /** 无条件白名单：登录/刷新、推送、文档、健康检查 */
     private static final String[] WHITELIST = {
             "/auth/login",
             "/auth/refresh",
-            "/realtime/**",
-            "/stations/map",
-            "/forecasts",
-            "/articles",
-            "/articles/**",
             "/ws/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/actuator/health"
+    };
+
+    /**
+     * 仅 GET 公开的只读接口。
+     * 必须限定方法：否则 POST /articles、POST /forecasts/generate 等写接口会被一并放行造成越权。
+     */
+    private static final String[] PUBLIC_GET = {
+            "/realtime/latest",
+            "/realtime/latest/batch",
+            "/realtime/curve",
+            "/stations/map",
+            "/forecasts",
+            "/articles",
+            "/articles/**"
     };
 
     @Bean
@@ -57,6 +67,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(WHITELIST).permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handler -> handler
                         // 未认证：返回统一 401 JSON
