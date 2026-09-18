@@ -38,7 +38,10 @@ public enum ErrorCode {
     ALERT_THRESHOLD_INVALID(60002, "告警规则阈值非法"),
     ALERT_RULE_NOT_FOUND(60003, "告警规则不存在"),
     USER_EXISTS(60004, "用户名已存在"),
-    EXPORT_TASK_BUSY(60005, "导出任务过于频繁，请稍后重试");
+    EXPORT_TASK_BUSY(60005, "导出任务过于频繁，请稍后重试"),
+    DEVICE_CODE_EXISTS(60006, "设备编码已存在"),
+    QC_TASK_NOT_FOUND(60007, "质控审核任务不存在"),
+    QC_TASK_REVIEWED(60008, "该质控任务已审核，不能重复处理");
 
     private final int code;
     private final String message;
