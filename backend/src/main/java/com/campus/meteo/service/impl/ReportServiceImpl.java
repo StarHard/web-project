@@ -60,6 +60,11 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public Long generate(ReportGenerateReq req) {
+        return generate(req, SecurityUtils.getCurrentUserId());
+    }
+
+    @Override
+    public Long generate(ReportGenerateReq req, Long operatorId) {
         Integer type = req.getReportType();
         LocalDate start = req.getPeriodStart();
         LocalDate end = req.getPeriodEnd() != null ? req.getPeriodEnd() : start;
@@ -82,7 +87,7 @@ public class ReportServiceImpl implements ReportService {
         record.setPeriodStart(start);
         record.setPeriodEnd(end);
         record.setFilePath(file.toString());
-        record.setCreateBy(SecurityUtils.getCurrentUserId());
+        record.setCreateBy(operatorId);
         reportFileMapper.insert(record);
         log.info("报表生成完成: id={}, type={}, station={}", record.getId(), type, req.getStationId());
         return record.getId();

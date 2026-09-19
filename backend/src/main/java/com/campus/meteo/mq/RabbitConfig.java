@@ -24,7 +24,6 @@ public class RabbitConfig {
 
     public static final String QUEUE_METEO_RAW = "queue.meteo.raw";      // 采集 → 质控
     public static final String QUEUE_METEO_QC_ALERT = "queue.meteo.qc.alert";  // 质控 → 告警
-    public static final String QUEUE_METEO_QC_REPORT = "queue.meteo.qc.report"; // 质控 → 报表
 
     @Bean
     public TopicExchange meteoExchange() {
@@ -42,11 +41,6 @@ public class RabbitConfig {
     }
 
     @Bean
-    public Queue meteoQcReportQueue() {
-        return new Queue(QUEUE_METEO_QC_REPORT, true);
-    }
-
-    @Bean
     public Binding bindingRaw(Queue meteoRawQueue, TopicExchange meteoExchange) {
         return BindingBuilder.bind(meteoRawQueue).to(meteoExchange).with(MqTopics.METEO_RAW);
     }
@@ -54,11 +48,6 @@ public class RabbitConfig {
     @Bean
     public Binding bindingQcAlert(Queue meteoQcAlertQueue, TopicExchange meteoExchange) {
         return BindingBuilder.bind(meteoQcAlertQueue).to(meteoExchange).with(MqTopics.METEO_QC);
-    }
-
-    @Bean
-    public Binding bindingQcReport(Queue meteoQcReportQueue, TopicExchange meteoExchange) {
-        return BindingBuilder.bind(meteoQcReportQueue).to(meteoExchange).with(MqTopics.METEO_QC);
     }
 
     /**
