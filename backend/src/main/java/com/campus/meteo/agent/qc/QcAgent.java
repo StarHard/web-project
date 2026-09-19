@@ -142,16 +142,25 @@ public class QcAgent {
         }
     }
 
-    /** 从检验详情中提取要素名 */
+    /**
+     * 从检验详情中提取要素名：要素名紧跟 '['，直到 '=' / ':' / ',' 中最早出现的分隔符为止。
+     * 极值检查写作 "极值检查[temp=55.0, ...]"，时间一致性写作 "时间一致性[temp: 10.0 → ...]"，
+     * 两种格式都要能解析——早先只按 '=' 切分，时间一致性的可疑数据取不到要素名，
+     * 审核任务被静默丢弃（reason 生成后 createReviewTasks 里 continue 掉了）。
+     */
     private String extractElement(String reason) {
         int start = reason.indexOf('[') + 1;
-        int end = reason.indexOf('=');
-        if (start > 0 && end > start) {
-            String head = reason.substring(start, end);
-            int colon = head.indexOf(':');
-            return colon > 0 ? head.substring(0, colon) : head;
+        if (start <= 0 || start >= reason.length()) {
+            return "unknown";
         }
-        return "unknown";
+        int end = reason.length();
+        for (char separator : new char[]{'=', ':', ','}) {
+            int index = reason.indexOf(separator, start);
+            if (index > start && index < end) {
+                end = index;
+            }
+        }
+        return reason.substring(start, end).trim();
     }
 
     /** msgId 去重（Redis SETNX，10 分钟过期） */
