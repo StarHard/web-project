@@ -2,6 +2,7 @@ package com.campus.meteo.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.campus.meteo.agent.qc.MissingDataInterpolator;
 import com.campus.meteo.common.constant.QcFlag;
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
@@ -48,6 +49,14 @@ public class QcReviewServiceImpl implements QcReviewService {
     private final QcReviewTaskMapper qcReviewTaskMapper;
     private final StationMapper stationMapper;
     private final ObsWriter obsWriter;
+    private final MissingDataInterpolator missingDataInterpolator;
+
+    @Override
+    public InterpolationSummary interpolateMissing() {
+        MissingDataInterpolator.InterpolationResult result = missingDataInterpolator.interpolateOnce();
+        return new InterpolationSummary(result.stationsScanned(), result.pointsWritten(),
+                result.gapsSkipped(), result.skippedByLock());
+    }
 
     @Override
     public PageResult<QcReviewTask> page(long pageNum, long pageSize, Long stationId, Integer status,

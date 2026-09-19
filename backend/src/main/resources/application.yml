@@ -39,6 +39,22 @@ meteo:
   export:
     # 异步导出文件存储目录
     dir: ./exports
+  # 缺测数据智能插补（FR-QC-05）
+  interpolation:
+    # 定时扫描开关；手动触发接口 POST /qc-tasks/interpolate 不受此开关约束
+    enabled: true
+    # 扫描周期（毫秒），用 fixedDelay 避免单次超时的长任务叠加
+    scan-delay-ms: 600000
+    # 扫描窗口（小时）：缺测需事后才可判定，窗口太短会漏掉刚发生的缺口
+    scan-window-hours: 3
+    # 长度不超过该槽位数走线性插值
+    max-gap-slots: 2
+    # 槽位数超过线性插值上限时回退邻近站点回归，再超过该值直接放弃（不伪造长中断）
+    max-neighbor-slots: 30
+    # 邻近站点最大距离（公里），超出视为不可用
+    max-neighbor-distance-km: 50
+    # 邻近站点回归要求的两站配对样本数下限，不足则不启用（避免小样本订正失真）
+    min-paired-samples: 10
 
 logging:
   level:

@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -47,5 +48,12 @@ public class QcReviewController {
     public Result<Void> review(@PathVariable Long id, @Valid @RequestBody QcReviewReq req) {
         qcReviewService.review(id, req);
         return Result.ok();
+    }
+
+    @Operation(summary = "手动触发一轮缺测插补（FR-QC-05），返回本轮回填统计")
+    @PostMapping("/interpolate")
+    @PreAuthorize("hasAuthority('qc:review')")
+    public Result<QcReviewService.InterpolationSummary> interpolate() {
+        return Result.ok(qcReviewService.interpolateMissing());
     }
 }

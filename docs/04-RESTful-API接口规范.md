@@ -149,6 +149,7 @@
 |---|---|---|---|
 | GET | /qc-tasks?stationId=&status=&startTime=&endTime= | 审核任务分页 | OPERATOR |
 | PATCH | /qc-tasks/{id}/review | 审核：`{"action":"confirm/revise/void","revisedValue":12.5}` | OPERATOR |
+| POST | /qc-tasks/interpolate | 手动触发一轮缺测插补（FR-QC-05），返回本轮回填统计 | OPERATOR |
 
 ### 2.8 气象服务与报表（/articles, /reports）
 

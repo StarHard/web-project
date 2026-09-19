@@ -45,9 +45,9 @@ public class VerificationService {
         Instant now = Instant.now();
         Instant from = now.minusSeconds((long) days * 86400);
 
-        // 实况按小时聚合
+        // 实况按小时聚合（只取观测值：插补合成值不得作为检验真值，否则评分虚高）
         Map<Long, Map<String, Double>> obsHourly = aggregateHourly(
-                obsReader.queryRange(stationCode, from, now));
+                obsReader.queryObservedRange(stationCode, from, now));
         // 预报序列（全部发布记录，逐条与实况配对）
         List<FcstReader.FcstPoint> fcstPoints = fcstReader.queryAll(stationCode, model, from, now);
 

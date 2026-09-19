@@ -16,7 +16,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -49,6 +51,14 @@ public class ObsReader {
     private static final int RANK_UNVERIFIED = 1;
 
     /**
+     * 仅观测值（质控通过或人工修正），不含插补合成值。
+     * 用途：插补的锚点与跨站配对，以及告警判定、预报准确率检验——这些链路以实况为真值，
+     * 掺入合成值会造成凭插补数据触发告警、准确率评分虚高。
+     */
+    private static final String QC_FLAG_OBSERVED =
+            "|> filter(fn: (r) => r.qc_flag == \"passed\" or r.qc_flag == \"revised\")";
+
+    /**
      * 合法聚合窗口：数字 + 单位（s/m/h/d）。
      * 该值会被拼接进 Flux 语句，必须严格校验，防止用户输入注入查询。
      */
@@ -70,15 +80,66 @@ public class ObsReader {
             log.warn("非法站点编码，拒绝查询: {}", stationCode);
             return List.of();
         }
+        return executeQuery(rawFlux(stationCode, start, stop, QC_FLAG_FILTER), stationCode);
+    }
+
+    /**
+     * 查询站点在时间范围内的**仅观测值**序列（passed/revised），不含插补合成值
+     *
+     * 供两类用途：插补的锚点与跨站配对；告警判定与预报准确率检验。
+     */
+    public List<ObsData> queryObservedRange(String stationCode, Instant start, Instant stop) {
+        if (!isValidStationCode(stationCode)) {
+            log.warn("非法站点编码，拒绝查询: {}", stationCode);
+            return List.of();
+        }
+        return executeQuery(rawFlux(stationCode, start, stop, QC_FLAG_OBSERVED), stationCode);
+    }
+
+    /**
+     * 查询时间范围内**存在任意质控标记数据**的时刻集合（含 raw 与 suspect）
+     *
+     * 缺测判定用：只要某时刻存在任意标记的点，就说明设备有上报，
+     * 不属于物理缺测。若此处混入「仅质控通过」的口径，被拒绝的时次会被误判为缺测，
+     * 插补值会把真实存在的质控问题掩盖掉。
+     */
+    public Set<Instant> queryOccupiedTimestamps(String stationCode, Instant start, Instant stop) {
+        if (!isValidStationCode(stationCode)) {
+            log.warn("非法站点编码，拒绝查询: {}", stationCode);
+            return Set.of();
+        }
         String flux = """
+                from(bucket: "%s")
+                  |> range(start: %s, stop: %s)
+                  |> filter(fn: (r) => r._measurement == "obs_min" and r.station_code == "%s")
+                  |> keep(columns: ["_time"])
+                """.formatted(properties.getBucket(), start.toString(), stop.toString(), stationCode);
+        Set<Instant> times = new TreeSet<>();
+        try {
+            for (FluxTable table : client.getQueryApi().query(flux, properties.getOrg())) {
+                for (FluxRecord record : table.getRecords()) {
+                    if (record.getTime() != null) {
+                        times.add(record.getTime());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("InfluxDB 查询异常(占用时刻): station={}, err={}", stationCode, e.getMessage());
+            return Set.of();
+        }
+        return times;
+    }
+
+    /** 原始粒度查询语句：仅按 station 与质控标记过滤，不做聚合 */
+    private String rawFlux(String stationCode, Instant start, Instant stop, String flagFilter) {
+        return """
                 from(bucket: "%s")
                   |> range(start: %s, stop: %s)
                   |> filter(fn: (r) => r._measurement == "obs_min" and r.station_code == "%s")
                   %s
                   |> sort(columns: ["_time"])
                 """.formatted(properties.getBucket(), start.toString(), stop.toString(),
-                stationCode, QC_FLAG_FILTER);
-        return executeQuery(flux, stationCode);
+                stationCode, flagFilter);
     }
 
     /**

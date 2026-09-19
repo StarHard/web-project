@@ -113,7 +113,8 @@ public class AlertAgent {
     /** 持续超限判定：窗口内 ≥80% 的时次超过阈值且样本数 ≥2 */
     private boolean isSustainedExceed(AlertRule rule, ObsData obs, double threshold) {
         int durationMin = rule.getDurationMin() != null ? rule.getDurationMin() : 60;
-        List<ObsData> window = obsReader.queryRange(obs.getStationCode(),
+        // 只取观测值：插补出的合成值不得参与告警判定，否则可能凭合成值触发或升级预警
+        List<ObsData> window = obsReader.queryObservedRange(obs.getStationCode(),
                 obs.getTs().minusSeconds((long) durationMin * 60), obs.getTs());
         List<Double> values = window.stream()
                 .map(o -> o.getElements().get(rule.getElement()))

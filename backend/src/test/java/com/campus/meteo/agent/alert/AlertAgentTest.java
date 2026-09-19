@@ -131,8 +131,8 @@ class AlertAgentTest {
         AlertRule rule = rule(3L, "rain", 3, 20.0, 3, 60, "web");
         stubSingleRule(rule);
         when(alertRecordMapper.selectOne(any())).thenReturn(null);
-        // 5 个时次中 4 个超阈值 = 80%
-        when(obsReader.queryRange(eq(STATION), any(), any())).thenReturn(List.of(
+        // 5 个时次中 4 个超阈值 = 80%。持续超限判定走「仅观测值」查询，不含插补合成值
+        when(obsReader.queryObservedRange(eq(STATION), any(), any())).thenReturn(List.of(
                 obsAt(Instant.parse("2026-09-19T00:00:00Z"), Map.of("rain", 30.0)),
                 obsAt(Instant.parse("2026-09-19T00:10:00Z"), Map.of("rain", 30.0)),
                 obsAt(Instant.parse("2026-09-19T00:20:00Z"), Map.of("rain", 30.0)),
@@ -150,7 +150,7 @@ class AlertAgentTest {
     void shouldNotAlertWhenSustainedWindowHasTooFewSamples() throws Exception {
         AlertRule rule = rule(3L, "rain", 3, 20.0, 3, 60, "web");
         stubSingleRule(rule);
-        when(obsReader.queryRange(eq(STATION), any(), any()))
+        when(obsReader.queryObservedRange(eq(STATION), any(), any()))
                 .thenReturn(List.of(obsAt(Instant.parse("2026-09-19T00:00:00Z"), Map.of("rain", 30.0))));
 
         alertAgent.onQcData(obsAt(Instant.parse("2026-09-19T00:10:00Z"), Map.of("rain", 30.0)),
