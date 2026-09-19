@@ -78,8 +78,7 @@ async function submit(): Promise<void> {
   align-items: center;
   gap: 40px;
   padding: 0 8vw;
-  background: radial-gradient(900px 500px at 15% 10%, rgba(59, 130, 246, 0.18), transparent),
-    radial-gradient(700px 400px at 85% 85%, rgba(34, 211, 238, 0.12), transparent), var(--bg);
+  background: var(--bg);
 }
 
 .login-visual h1 {
@@ -107,7 +106,7 @@ async function submit(): Promise<void> {
 
 .login-visual li::before {
   content: '◆';
-  color: var(--cyan);
+  color: var(--text-dim);
   margin-right: 10px;
   font-size: 10px;
 }

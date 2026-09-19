@@ -350,8 +350,8 @@ onMounted(async () => {
 }
 
 .chip.active {
-  background: rgba(59, 130, 246, 0.18);
+  background: rgba(74, 126, 168, 0.18);
   border-color: var(--primary);
-  color: #bfdbfe;
+  color: var(--accent);
 }
 </style>

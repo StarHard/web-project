@@ -1,26 +1,30 @@
-/* ===== 设计系统变量 ===== */
+/* ===== 设计系统变量 =====
+ * 配色取向：仪器面板。中性深灰蓝底 + 去饱和钢蓝强调色，
+ * 颜色只用于编码（告警等级、质控状态、在线状态），不做装饰。
+ */
 :root {
-  --bg: #060c18;
-  --bg-panel: #0d1526;
-  --bg-elevated: #131f36;
-  --bg-hover: #18263f;
-  --border: #1f2f4a;
-  --border-light: #2a3d5c;
+  --bg: #0f1116;
+  --bg-panel: #17191f;
+  --bg-elevated: #1e2128;
+  --bg-hover: #262a32;
+  --border: #292e36;
+  --border-light: #383e48;
 
-  --text: #e8eefb;
-  --text-muted: #8ba0bf;
-  --text-dim: #5f7a9c;
+  --text: #dfe3e9;
+  --text-muted: #98a0ab;
+  --text-dim: #767e8a;
 
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --cyan: #22d3ee;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  /* --primary 用于按钮底/聚焦边框；--accent 用于链接与文字强调（对比度更高） */
+  --primary: #4a7ea8;
+  --primary-hover: #5a90ba;
+  --accent: #7ea8cc;
+  --success: #2fa85c;
+  --warning: #d99a2b;
+  --danger: #d1574f;
 
-  --radius: 10px;
-  --radius-sm: 6px;
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
 /* ===== 基础重置 ===== */
@@ -38,14 +42,14 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--cyan);
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -99,16 +103,7 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-/* 固定数量的指标卡：显式声明列数，避免 auto-fit 折成 3+1 的断裂布局 */
-.grid-metric {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
 
-@media (min-width: 1400px) {
-  .grid-metric {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
 
 /* 筛选区的操作按钮按内容宽度显示，不被网格等分拉伸 */
 .filters .btn {
@@ -159,25 +154,61 @@ a {
   font-size: 13px;
 }
 
-.metric-value {
-  margin-top: 6px;
-  font-size: 28px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.5px;
+/* 数据条：多要素读数并列，用分隔线而非独立卡片，降低视觉噪声 */
+.readout-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
 }
 
-.metric-unit {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-left: 4px;
-  font-weight: 400;
+.readout {
+  padding: 12px 18px;
+  border-left: 1px solid var(--border);
 }
 
-.metric-foot {
-  margin-top: 8px;
+.readout:first-child {
+  border-left: none;
+}
+
+.readout-label {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.readout-unit {
+  margin-left: 4px;
+  color: var(--text-dim);
+}
+
+.readout-value {
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+.readout-range {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .readout-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .readout:nth-child(odd) {
+    border-left: none;
+  }
+
+  .readout:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* ===== 按钮 ===== */
@@ -220,12 +251,12 @@ a {
 }
 
 .btn-danger {
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, 0.4);
+  color: #e08b86;
+  border-color: rgba(209, 87, 79, 0.4);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(209, 87, 79, 0.15);
   border-color: var(--danger);
 }
 
@@ -280,7 +311,7 @@ a {
 
 .input::placeholder,
 .textarea::placeholder {
-  color: #4a5f7d;
+  color: #5c646f;
 }
 
 .textarea {
@@ -303,6 +334,7 @@ a {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .table th {
@@ -327,7 +359,7 @@ a {
 }
 
 .table tbody tr:hover {
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .table-empty {
@@ -348,27 +380,27 @@ a {
 }
 
 .tag-online {
-  color: #4ade80;
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.3);
+  color: #5cc17f;
+  background: rgba(47, 168, 92, 0.14);
+  border-color: rgba(47, 168, 92, 0.32);
 }
 
 .tag-offline {
-  color: #94a3b8;
-  background: rgba(148, 163, 184, 0.12);
-  border-color: rgba(148, 163, 184, 0.25);
+  color: #99a1ac;
+  background: rgba(153, 161, 172, 0.1);
+  border-color: rgba(153, 161, 172, 0.25);
 }
 
 .tag-info {
-  color: #7dd3fc;
-  background: rgba(34, 211, 238, 0.12);
-  border-color: rgba(34, 211, 238, 0.3);
+  color: #9daec1;
+  background: rgba(157, 174, 193, 0.1);
+  border-color: rgba(157, 174, 193, 0.28);
 }
 
 .tag-warn {
-  color: #fbbf24;
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
+  color: #e0b45c;
+  background: rgba(217, 154, 43, 0.14);
+  border-color: rgba(217, 154, 43, 0.32);
 }
 
 .tag-muted {
@@ -397,7 +429,7 @@ a {
 }
 
 .state-error {
-  color: #fca5a5;
+  color: #e08b86;
 }
 
 /* ===== 图表容器 ===== */
@@ -414,7 +446,7 @@ a {
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(3, 8, 18, 0.75);
+  background: rgba(8, 9, 12, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;

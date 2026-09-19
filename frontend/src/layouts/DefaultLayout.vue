@@ -145,14 +145,14 @@ async function handleLogout(): Promise<void> {
 .layout {
   display: flex;
   height: 100%;
-  background: radial-gradient(1200px 600px at 20% -10%, rgba(59, 130, 246, 0.1), transparent), var(--bg);
+  background: var(--bg);
 }
 
 .sidebar {
   width: 220px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
-  background: rgba(10, 18, 33, 0.85);
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -175,8 +175,8 @@ async function handleLogout(): Promise<void> {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary), var(--cyan));
+  border-radius: var(--radius-sm);
+  background: var(--primary);
   color: #fff;
   display: grid;
   place-items: center;
@@ -234,9 +234,9 @@ async function handleLogout(): Promise<void> {
 }
 
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(59, 130, 246, 0.22), rgba(34, 211, 238, 0.08));
-  color: #fff;
-  box-shadow: inset 2px 0 0 var(--cyan);
+  background: rgba(74, 126, 168, 0.16);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 .main {
@@ -282,8 +282,9 @@ async function handleLogout(): Promise<void> {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 20px;
-  background: rgba(34, 211, 238, 0.12);
-  color: #7dd3fc;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .content {

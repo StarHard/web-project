@@ -69,20 +69,20 @@ function buildOption(element: string, points: { time: string; value: number | nu
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
     grid: { left: 52, right: 24, top: 20, bottom: 46 },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: '#1f2f4a' }],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: '#292e36' }],
     xAxis: {
       type: 'category',
       boundaryGap: isRain,
       data: points.map((point) => point.time),
-      axisLine: { lineStyle: { color: '#1f2f4a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      axisLine: { lineStyle: { color: '#292e36' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     yAxis: {
       type: 'value',
       name: ELEMENT_UNITS[element] ?? '',
-      nameTextStyle: { color: '#8ba0bf' },
-      splitLine: { lineStyle: { color: '#16233a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      nameTextStyle: { color: '#98a0ab' },
+      splitLine: { lineStyle: { color: '#21252c' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     series: [
       {
@@ -92,8 +92,8 @@ function buildOption(element: string, points: { time: string; value: number | nu
         showSymbol: false,
         barMaxWidth: 14,
         data: points.map((point) => point.value),
-        lineStyle: { width: 2, color: '#3b82f6' },
-        itemStyle: { color: '#22d3ee', borderRadius: [3, 3, 0, 0] },
+        lineStyle: { width: 2, color: '#6f9dc4' },
+        itemStyle: { color: '#4a7ea8', borderRadius: [3, 3, 0, 0] },
         areaStyle: isRain
           ? undefined
           : {
@@ -104,8 +104,8 @@ function buildOption(element: string, points: { time: string; value: number | nu
                 x2: 0,
                 y2: 1,
                 colorStops: [
-                  { offset: 0, color: 'rgba(59,130,246,0.32)' },
-                  { offset: 1, color: 'rgba(59,130,246,0.02)' }
+                  { offset: 0, color: 'rgba(111,157,196,0.28)' },
+                  { offset: 1, color: 'rgba(111,157,196,0.02)' }
                 ]
               }
             }
@@ -319,9 +319,9 @@ onMounted(async () => {
 }
 
 .chip.active {
-  background: rgba(59, 130, 246, 0.18);
+  background: rgba(74, 126, 168, 0.18);
   border-color: var(--primary);
-  color: #bfdbfe;
+  color: var(--accent);
 }
 
 .metric-row {

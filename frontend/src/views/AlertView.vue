@@ -57,8 +57,8 @@ const statOption = computed<EChartsOption>(() => {
         type: 'pie',
         radius: ['46%', '72%'],
         center: ['50%', '52%'],
-        label: { color: '#8ba0bf', fontSize: 12 },
-        itemStyle: { borderColor: '#0d1526', borderWidth: 2 },
+        label: { color: '#98a0ab', fontSize: 12 },
+        itemStyle: { borderColor: '#17191f', borderWidth: 2 },
         data: [1, 2, 3, 4].map((level) => ({
           name: ALERT_LEVEL_LABELS[level],
           value: byLevel[String(level)] ?? 0,
@@ -165,11 +165,11 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="grid grid-metric" style="margin-bottom: 16px">
-      <div v-for="card in levelCards" :key="card.level" class="panel metric">
-        <div class="metric-label">{{ card.label }}预警</div>
-        <div class="metric-value" :style="{ color: card.color }">{{ card.count }}</div>
-        <div class="metric-foot">占比 {{ card.ratio }}%</div>
+    <div class="panel readout-strip" style="margin-bottom: 16px">
+      <div v-for="card in levelCards" :key="card.level" class="readout">
+        <div class="readout-label">{{ card.label }}预警</div>
+        <div class="readout-value" :style="{ color: card.color }">{{ card.count }}</div>
+        <div class="readout-range">占比 {{ card.ratio }}%</div>
       </div>
     </div>
 

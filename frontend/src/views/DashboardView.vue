@@ -69,15 +69,15 @@ const curveOption = computed<EChartsOption>(() => {
       type: 'category',
       boundaryGap: false,
       data: times,
-      axisLine: { lineStyle: { color: '#1f2f4a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      axisLine: { lineStyle: { color: '#292e36' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     yAxis: {
       type: 'value',
       name: ELEMENT_UNITS[chartElement.value] ?? '',
-      nameTextStyle: { color: '#8ba0bf' },
-      splitLine: { lineStyle: { color: '#16233a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      nameTextStyle: { color: '#98a0ab' },
+      splitLine: { lineStyle: { color: '#21252c' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     series: [
       {
@@ -86,7 +86,7 @@ const curveOption = computed<EChartsOption>(() => {
         smooth: true,
         showSymbol: false,
         data: values,
-        lineStyle: { width: 2, color: '#22d3ee' },
+        lineStyle: { width: 2, color: '#6f9dc4' },
         areaStyle: {
           color: {
             type: 'linear',
@@ -95,8 +95,8 @@ const curveOption = computed<EChartsOption>(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(34,211,238,0.35)' },
-              { offset: 1, color: 'rgba(34,211,238,0.02)' }
+              { offset: 0, color: 'rgba(111,157,196,0.28)' },
+              { offset: 1, color: 'rgba(111,157,196,0.02)' }
             ]
           }
         }
@@ -182,15 +182,13 @@ watch(autoRefresh, setupTimer)
       </div>
     </div>
 
-    <div class="grid grid-metric">
-      <div v-for="metric in metrics" :key="metric.element" class="panel metric">
-        <div class="metric-label">{{ metric.label }}</div>
-        <div class="metric-value">
-          {{ metric.value ?? '--' }}<span class="metric-unit">{{ metric.unit }}</span>
+    <div class="panel readout-strip">
+      <div v-for="metric in metrics" :key="metric.element" class="readout">
+        <div class="readout-label">
+          {{ metric.label }}<span class="readout-unit">{{ metric.unit }}</span>
         </div>
-        <div class="metric-foot">
-          24h 区间 {{ metric.min ?? '--' }} ~ {{ metric.max ?? '--' }}
-        </div>
+        <div class="readout-value">{{ metric.value ?? '--' }}</div>
+        <div class="readout-range">近 {{ hours }}h {{ metric.min ?? '--' }} ~ {{ metric.max ?? '--' }}</div>
       </div>
     </div>
 

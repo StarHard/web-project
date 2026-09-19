@@ -189,7 +189,7 @@ onMounted(loadArticles)
 }
 
 .article-title:hover {
-  color: var(--cyan);
+  color: var(--accent);
 }
 
 .article-time {

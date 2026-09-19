@@ -41,29 +41,29 @@ const forecastOption = computed<EChartsOption>(() => {
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    legend: { data: ['气温', '降水'], textStyle: { color: '#8ba0bf' }, top: 0 },
+    legend: { data: ['气温', '降水'], textStyle: { color: '#98a0ab' }, top: 0 },
     grid: { left: 52, right: 52, top: 40, bottom: 40 },
     xAxis: {
       type: 'category',
       boundaryGap: false,
       data: times,
-      axisLine: { lineStyle: { color: '#1f2f4a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      axisLine: { lineStyle: { color: '#292e36' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     yAxis: [
       {
         type: 'value',
         name: '℃',
-        nameTextStyle: { color: '#8ba0bf' },
-        splitLine: { lineStyle: { color: '#16233a' } },
-        axisLabel: { color: '#8ba0bf', fontSize: 11 }
+        nameTextStyle: { color: '#98a0ab' },
+        splitLine: { lineStyle: { color: '#21252c' } },
+        axisLabel: { color: '#98a0ab', fontSize: 11 }
       },
       {
         type: 'value',
         name: 'mm',
-        nameTextStyle: { color: '#8ba0bf' },
+        nameTextStyle: { color: '#98a0ab' },
         splitLine: { show: false },
-        axisLabel: { color: '#8ba0bf', fontSize: 11 }
+        axisLabel: { color: '#98a0ab', fontSize: 11 }
       }
     ],
     series: [
@@ -74,7 +74,7 @@ const forecastOption = computed<EChartsOption>(() => {
         showSymbol: false,
         yAxisIndex: 0,
         data: points.map((point) => point.elements.temp ?? null),
-        lineStyle: { width: 2, color: '#22d3ee' },
+        lineStyle: { width: 2, color: '#6f9dc4' },
         areaStyle: {
           color: {
             type: 'linear',
@@ -83,8 +83,8 @@ const forecastOption = computed<EChartsOption>(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(34,211,238,0.28)' },
-              { offset: 1, color: 'rgba(34,211,238,0.02)' }
+              { offset: 0, color: 'rgba(111,157,196,0.28)' },
+              { offset: 1, color: 'rgba(111,157,196,0.02)' }
             ]
           }
         }
@@ -95,7 +95,7 @@ const forecastOption = computed<EChartsOption>(() => {
         yAxisIndex: 1,
         barMaxWidth: 10,
         data: points.map((point) => point.elements.rain ?? null),
-        itemStyle: { color: 'rgba(59,130,246,0.75)', borderRadius: [3, 3, 0, 0] }
+        itemStyle: { color: 'rgba(74,126,168,0.8)', borderRadius: [3, 3, 0, 0] }
       }
     ]
   }
@@ -104,22 +104,22 @@ const forecastOption = computed<EChartsOption>(() => {
 const compareOption = computed<EChartsOption>(() => {
   if (!compare.value) return {}
   const modelNames = Object.keys(compare.value.models)
-  const palette = ['#22d3ee', '#f59e0b', '#a78bfa', '#34d399']
+  const palette = ['#6f9dc4', '#d9a441', '#9b8bc4', '#5aa87c']
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    legend: { data: modelNames, textStyle: { color: '#8ba0bf' }, top: 0 },
+    legend: { data: modelNames, textStyle: { color: '#98a0ab' }, top: 0 },
     grid: { left: 52, right: 24, top: 40, bottom: 40 },
     xAxis: {
       type: 'category',
       data: (compare.value.models[modelNames[0]] ?? []).map((point) => formatTime(point.time)),
-      axisLine: { lineStyle: { color: '#1f2f4a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      axisLine: { lineStyle: { color: '#292e36' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { color: '#16233a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      splitLine: { lineStyle: { color: '#21252c' } },
+      axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
     series: modelNames.map((model, index) => ({
       name: model,
