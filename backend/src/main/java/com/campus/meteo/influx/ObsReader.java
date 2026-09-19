@@ -222,32 +222,57 @@ public class ObsReader {
     }
 
     /**
-     * 查询站点某要素在指定时间之后的最后一个值（时间一致性检验用）
+     * 一次查询站点各要素在时间窗内**最后被质控接受**的值（时间一致性检验用）
      *
-     * 注意：Flux last() 对每个序列表各返回一行（raw 与 passed 各一行），
-     * 必须取 _time 最大的一条。若只取第一条，一旦命中过期的 passed 序列，
-     * 时间一致性检验会拿陈旧值作比较并永久误判，且样本被拒后 passed 序列更加陈旧，
-     * 形成自我强化的误判级联。
+     * 只取 passed / revised：若把 raw 也算作基准，紧邻的上一条若是刚被极值检查拒绝的尖峰
+     * （如 −55℃），本条正常值与之比较就会因变化量巨大而被误判为可疑——每个尖峰都会
+     * 连带污染其后一条正常数据。基准语义应是「最近一个被认可的值」。
+     *
+     * 窗口必须排除本次观测自身：采集 Agent 先写 raw 再投递 MQ，质控 Agent 处理时
+     * 该条已入库，若无 stop 边界，last() 取到的就是当前这条本身，比较值恒等于当前值，
+     * 检查将永远不触发（此前即为此状态）。stop 取观测时刻的整秒——InfluxDB 写入精度为秒、
+     * range 的 stop 为开区间，用整秒才能把该时刻排除掉。
+     *
+     * 回溯窗口（调用方传入）同时兜住了「长期无被接受值」的情形：窗口内取不到即放弃本轮判定，
+     * 不会拿很久以前的陈旧值作比较。
+     *
+     * 注意 Flux last() 对每个序列表各返回一行（各 qc_flag 各一行），必须取 _time 最大的一条。
      */
-    public Double queryLastElementValue(String stationCode, String element, Instant start) {
+    public Map<String, Double> queryLastAcceptedValues(String stationCode, Instant start, Instant stop) {
+        if (!isValidStationCode(stationCode)) {
+            log.warn("非法站点编码，拒绝查询: {}", stationCode);
+            return Map.of();
+        }
         String flux = """
                 from(bucket: "%s")
-                  |> range(start: %s)
-                  |> filter(fn: (r) => r._measurement == "obs_min" and r.station_code == "%s" and r._field == "%s"
-                             and (r.qc_flag == "passed" or r.qc_flag == "revised" or r.qc_flag == "raw"))
+                  |> range(start: %s, stop: %s)
+                  |> filter(fn: (r) => r._measurement == "obs_min" and r.station_code == "%s")
+                  %s
                   |> last(column: "_time")
-                """.formatted(properties.getBucket(), start.toString(), stationCode, element);
+                """.formatted(properties.getBucket(), start.toString(), stop.toString(),
+                stationCode, QC_FLAG_OBSERVED);
         try {
-            List<FluxTable> tables = client.getQueryApi().query(flux, properties.getOrg());
-            return tables.stream()
-                    .flatMap(t -> t.getRecords().stream())
-                    .filter(r -> r.getTime() != null && r.getValue() instanceof Number)
-                    .max(Comparator.comparing(FluxRecord::getTime))
-                    .map(r -> ((Number) r.getValue()).doubleValue())
-                    .orElse(null);
+            // 要素 → 目前见到的最新时刻
+            Map<String, Instant> latestAt = new HashMap<>();
+            Map<String, Double> latestValue = new LinkedHashMap<>();
+            for (FluxTable table : client.getQueryApi().query(flux, properties.getOrg())) {
+                for (FluxRecord record : table.getRecords()) {
+                    if (record.getTime() == null || !(record.getValue() instanceof Number number)
+                            || record.getField() == null) {
+                        continue;
+                    }
+                    String field = record.getField();
+                    Instant seen = latestAt.get(field);
+                    if (seen == null || record.getTime().isAfter(seen)) {
+                        latestAt.put(field, record.getTime());
+                        latestValue.put(field, number.doubleValue());
+                    }
+                }
+            }
+            return latestValue;
         } catch (Exception e) {
-            log.warn("InfluxDB 查询失败: station={}, element={}, err={}", stationCode, element, e.getMessage());
-            return null;
+            log.warn("InfluxDB 查询失败(最新要素值): station={}, err={}", stationCode, e.getMessage());
+            return Map.of();
         }
     }
 
