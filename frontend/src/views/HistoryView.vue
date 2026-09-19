@@ -5,16 +5,24 @@ import AppChart from '@/components/AppChart.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { queryHistory, submitExport, exportTaskStatus, downloadExport, type HistoryResp } from '@/api/data'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, round } from '@/utils/format'
+import { useFilters } from '@/utils/filters'
 import { toastError, toastSuccess } from '@/utils/toast'
 
 const ALL_ELEMENTS = ['temp', 'humi', 'pres', 'wind_speed', 'rain', 'rad', 'vis']
 
 const stations = ref<Station[]>([])
-const stationId = ref<number | null>(null)
+const { filters, resetFilters } = useFilters<{
+  stationId: number | null
+  granularity: string
+  startTime: string
+  endTime: string
+}>('history', {
+  stationId: null,
+  granularity: 'hour',
+  startTime: toInputValue(Date.now() - 3 * 86400_000),
+  endTime: toInputValue(Date.now())
+})
 const selectedElements = ref<string[]>(['temp', 'rain'])
-const granularity = ref('hour')
-const startTime = ref(toInputValue(Date.now() - 3 * 86400_000))
-const endTime = ref(toInputValue(Date.now()))
 const loading = ref(false)
 const result = ref<HistoryResp | null>(null)
 const exportStatus = ref('')
@@ -117,13 +125,13 @@ function buildOption(element: string, points: { time: string; value: number | nu
 async function loadStations(): Promise<void> {
   const page = await pageStations({ pageNum: 1, pageSize: 100 })
   stations.value = page.list
-  if (!stationId.value && page.list.length > 0) {
-    stationId.value = page.list[0].id
+  if (!filters.value.stationId && page.list.length > 0) {
+    filters.value.stationId = page.list[0].id
   }
 }
 
 async function search(): Promise<void> {
-  if (!stationId.value) {
+  if (!filters.value.stationId) {
     toastError('请先选择站点')
     return
   }
@@ -134,30 +142,37 @@ async function search(): Promise<void> {
   loading.value = true
   try {
     result.value = await queryHistory({
-      stationId: stationId.value,
+      stationId: filters.value.stationId,
       elements: selectedElements.value.join(','),
-      startTime: toApiTime(startTime.value),
-      endTime: toApiTime(endTime.value),
-      granularity: granularity.value
+      startTime: toApiTime(filters.value.startTime),
+      endTime: toApiTime(filters.value.endTime),
+      granularity: filters.value.granularity
     })
   } finally {
     loading.value = false
   }
 }
 
+/** 重置筛选条件后重新查询：站点回落到默认站点，时间范围回到默认区间 */
+async function handleReset(): Promise<void> {
+  resetFilters()
+  await loadStations()
+  search()
+}
+
 /** 异步导出：提交任务后轮询状态，完成后自动下载 */
 async function handleExport(format: 'csv' | 'txt'): Promise<void> {
-  if (!stationId.value) {
+  if (!filters.value.stationId) {
     toastError('请先选择站点')
     return
   }
   exportStatus.value = '正在提交导出任务…'
   try {
     const taskId = await submitExport({
-      stationId: stationId.value,
+      stationId: filters.value.stationId,
       elements: selectedElements.value.join(','),
-      startTime: toApiTime(startTime.value),
-      endTime: toApiTime(endTime.value),
+      startTime: toApiTime(filters.value.startTime),
+      endTime: toApiTime(filters.value.endTime),
       format
     })
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -216,30 +231,31 @@ onMounted(async () => {
       <div class="filters">
         <label class="field">
           <span class="field-label">站点</span>
-          <select v-model.number="stationId" class="select">
+          <select v-model.number="filters.stationId" class="select">
             <option v-for="item in stations" :key="item.id" :value="item.id">{{ item.name }}</option>
           </select>
         </label>
 
         <label class="field">
           <span class="field-label">开始时间</span>
-          <input v-model="startTime" type="datetime-local" class="input" />
+          <input v-model="filters.startTime" type="datetime-local" class="input" />
         </label>
 
         <label class="field">
           <span class="field-label">结束时间</span>
-          <input v-model="endTime" type="datetime-local" class="input" />
+          <input v-model="filters.endTime" type="datetime-local" class="input" />
         </label>
 
         <label class="field">
           <span class="field-label">聚合粒度</span>
-          <select v-model="granularity" class="select">
+          <select v-model="filters.granularity" class="select">
             <option value="min">原始（分钟）</option>
             <option value="hour">小时</option>
             <option value="day">日</option>
           </select>
         </label>
 
+        <button class="btn" @click="handleReset">重置</button>
         <button class="btn btn-primary" :disabled="loading" @click="search">
           {{ loading ? '查询中…' : '查询' }}
         </button>

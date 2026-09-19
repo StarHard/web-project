@@ -4,6 +4,7 @@ import DataPager from '@/components/DataPager.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { downloadReport, generateReport, pageReports, type ReportFile } from '@/api/content'
 import { formatTime } from '@/utils/format'
+import { useFilters } from '@/utils/filters'
 import { toastError, toastSuccess } from '@/utils/toast'
 
 const REPORT_TYPE_LABELS: Record<number, string> = {
@@ -22,7 +23,11 @@ const pageSize = ref(10)
 const loading = ref(false)
 const generating = ref(false)
 
-const filters = ref<{ stationId?: number; reportType?: number; period?: string }>({})
+const { filters, resetFilters } = useFilters<{ stationId?: number; reportType?: number; period?: string }>('report', {
+  stationId: undefined,
+  reportType: undefined,
+  period: undefined
+})
 
 const showGenerate = ref(false)
 const form = ref<{ stationId: number | null; reportType: number; periodStart: string; periodEnd: string; element: string }>({
@@ -91,6 +96,12 @@ function resetAndSearch(): void {
   loadReports()
 }
 
+/** 重置筛选条件与页码后重新查询 */
+function handleReset(): void {
+  resetFilters()
+  resetAndSearch()
+}
+
 onMounted(async () => {
   await loadStations()
   await loadReports()
@@ -114,6 +125,7 @@ onMounted(async () => {
           <option v-for="(label, key) in REPORT_TYPE_LABELS" :key="key" :value="Number(key)">{{ label }}</option>
         </select>
         <input v-model="filters.period" class="input" style="width: 130px" placeholder="yyyy-MM" @change="resetAndSearch" />
+        <button class="btn" @click="handleReset">重置</button>
         <button class="btn" :disabled="loading" @click="loadReports">刷新</button>
         <button class="btn btn-primary" @click="showGenerate = true">生成报表</button>
       </div>

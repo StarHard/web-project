@@ -11,6 +11,7 @@ import {
   type AlertRule
 } from '@/api/alert'
 import { ALERT_LEVEL_LABELS, ALERT_TYPE_LABELS, elementLabel } from '@/utils/format'
+import { useFilters } from '@/utils/filters'
 import { toastError, toastSuccess } from '@/utils/toast'
 
 const CONDITION_LABELS: Record<number, string> = {
@@ -27,7 +28,14 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(10)
 const loading = ref(false)
-const filters = ref<{ stationId?: number; alertType?: number; status?: number }>({})
+const { filters, resetFilters } = useFilters<{ stationId?: number; alertType?: number; status?: number }>(
+  'alert-rule-admin',
+  {
+    stationId: undefined,
+    alertType: undefined,
+    status: undefined
+  }
+)
 
 const showForm = ref(false)
 const editingId = ref<number | null>(null)
@@ -141,6 +149,12 @@ function resetAndSearch(): void {
   loadRules()
 }
 
+/** 重置筛选条件与页码后重新查询 */
+function handleReset(): void {
+  resetFilters()
+  resetAndSearch()
+}
+
 onMounted(async () => {
   await loadStations()
   await loadRules()
@@ -164,6 +178,7 @@ onMounted(async () => {
           <option :value="1">启用</option>
           <option :value="0">停用</option>
         </select>
+        <button class="btn" @click="handleReset">重置</button>
         <button class="btn" :disabled="loading" @click="loadRules">刷新</button>
         <button class="btn btn-primary" @click="openCreate">新增规则</button>
       </div>

@@ -20,6 +20,7 @@ import {
   ALERT_TYPE_LABELS,
   formatTime
 } from '@/utils/format'
+import { useFilters } from '@/utils/filters'
 import { toastError, toastSuccess } from '@/utils/toast'
 
 const stations = ref<Station[]>([])
@@ -29,7 +30,11 @@ const pageNum = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 
-const filters = ref<{ stationId?: number; level?: number; status?: number }>({ status: 0 })
+const { filters, resetFilters } = useFilters<{ stationId?: number; level?: number; status?: number }>('alert', {
+  stationId: undefined,
+  level: undefined,
+  status: 0
+})
 const statData = ref<{ total: number; byLevel: Record<string, number>; byStatus: Record<string, number> } | null>(null)
 
 const subscribes = ref<AlertSubscribe[]>([])
@@ -143,6 +148,12 @@ function resetAndSearch(): void {
   loadRecords()
 }
 
+/** 重置筛选条件与页码后重新查询 */
+function handleReset(): void {
+  resetFilters()
+  resetAndSearch()
+}
+
 onMounted(async () => {
   await loadStations()
   await Promise.all([loadRecords(), loadStat(), loadSubscribes()])
@@ -161,6 +172,7 @@ onMounted(async () => {
       </div>
       <div class="row">
         <button class="btn" @click="showSubscribe = true">我的订阅（{{ subscribes.length }}）</button>
+        <button class="btn" @click="handleReset">重置</button>
         <button class="btn" :disabled="loading" @click="loadRecords">刷新</button>
       </div>
     </div>

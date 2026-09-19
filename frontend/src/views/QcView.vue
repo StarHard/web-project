@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { pageQcTasks, reviewQcTask, type QcTask } from '@/api/qc'
 import { QC_STATUS_LABELS, elementLabel, formatTime } from '@/utils/format'
+import { useFilters } from '@/utils/filters'
 import { toastError, toastSuccess } from '@/utils/toast'
 
 const stations = ref<Station[]>([])
@@ -14,7 +15,10 @@ const pageSize = ref(20)
 const loading = ref(false)
 const busyId = ref<number | null>(null)
 
-const filters = ref<{ stationId?: number; status?: number }>({ status: 0 })
+const { filters, resetFilters } = useFilters<{ stationId?: number; status?: number }>('qc', {
+  stationId: undefined,
+  status: 0
+})
 
 const revising = ref<QcTask | null>(null)
 const revisedValue = ref<number | null>(null)
@@ -77,6 +81,18 @@ function resetAndSearch(): void {
   loadTasks()
 }
 
+/** 重置筛选条件与页码后重新查询 */
+function handleReset(): void {
+  resetFilters()
+  resetAndSearch()
+}
+
+/** 空态文案跟随筛选条件，避免在「已修正」等状态下仍提示「暂无待审核任务」 */
+const emptyText = computed(() => {
+  const status = filters.value.status
+  return status === undefined ? '暂无质控任务' : `暂无${QC_STATUS_LABELS[status] ?? ''}的质控任务`
+})
+
 onMounted(async () => {
   await loadStations()
   await loadTasks()
@@ -102,6 +118,7 @@ onMounted(async () => {
           <option :value="2">已修正</option>
           <option :value="3">已作废</option>
         </select>
+        <button class="btn" @click="handleReset">重置</button>
         <button class="btn" :disabled="loading" @click="loadTasks">刷新</button>
       </div>
     </div>
@@ -153,7 +170,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="tasks.length === 0">
-            <td colspan="8" class="table-empty">暂无待审核任务</td>
+            <td colspan="8" class="table-empty">{{ emptyText }}</td>
           </tr>
         </tbody>
       </table>
