@@ -8,8 +8,16 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const username = ref('admin')
-const password = ref('Admin@123')
+/**
+ * 演示账号仅用于本地联调与演示环境的表单预填。
+ * Vite 构建时会把 import.meta.env.DEV 替换为字面量 false，下面的三元表达式
+ * 随之被常量折叠，用户名与口令不会进入生产产物（发布前用 grep dist 校验）。
+ */
+const demoAccount = import.meta.env.DEV ? { username: 'admin', password: 'Admin@123' } : null
+
+const username = ref(demoAccount?.username ?? '')
+const password = ref(demoAccount?.password ?? '')
+const demoHint = demoAccount ? `演示账号：${demoAccount.username} / ${demoAccount.password}` : ''
 const loading = ref(false)
 
 async function submit(): Promise<void> {
@@ -45,7 +53,7 @@ async function submit(): Promise<void> {
 
     <form class="login-card" @submit.prevent="submit">
       <h2>账号登录</h2>
-      <p class="hint">演示账号：admin / Admin@123</p>
+      <p v-if="demoHint" class="hint">{{ demoHint }}</p>
 
       <label class="field">
         <span class="field-label">用户名</span>
