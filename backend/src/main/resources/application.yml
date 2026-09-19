@@ -39,6 +39,10 @@ meteo:
   export:
     # 异步导出文件存储目录
     dir: ./exports
+  # 站点离线检测（FR-RT-05）
+  station:
+    # 检测周期（毫秒）；离线判定阈值读 sys_config 的 station.offline.minutes
+    offline-check-delay-ms: 300000
   # 缺测数据智能插补（FR-QC-05）
   interpolation:
     # 定时扫描开关；手动触发接口 POST /qc-tasks/interpolate 不受此开关约束
