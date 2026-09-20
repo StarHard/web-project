@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.9</version>
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -19,15 +19,28 @@
 
     <properties>
         <java.version>17</java.version>
-        <mybatis-plus.version>3.5.7</mybatis-plus.version>
-        <springdoc.version>2.5.0</springdoc.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <springdoc.version>2.9.1</springdoc.version>
         <jjwt.version>0.12.6</jjwt.version>
         <influxdb-client.version>7.2.0</influxdb-client.version>
-        <!-- Excel 导出用（FR-DS-04），版本与 Spring Boot 3.2 兼容 -->
+        <!-- 大模型接入（决策智能体）：Spring AI 1.x 要求 Spring Boot 3.4/3.5 -->
+        <spring-ai.version>1.1.8</spring-ai.version>
         <poi.version>5.2.5</poi.version>
-        <!-- 覆盖 Spring Boot 3.2.9 默认 Lombok 版本以兼容 JDK 21+ 的注解处理 -->
+        <!-- 覆盖 Spring Boot 默认 Lombok 版本以兼容 JDK 21+ 的注解处理 -->
         <lombok.version>1.18.42</lombok.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Web / Security / 校验 -->
@@ -48,6 +61,14 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <!-- MyBatis Plus 3.5.9 起把分页/多租户等依赖 SQL 解析的插件拆到该模块，
+             MybatisPlusConfig 用了 PaginationInnerInterceptor，缺此依赖会在分页时抛类找不到。
+             注意版本须与 starter 保持一致。 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
             <version>${mybatis-plus.version}</version>
         </dependency>
         <dependency>
@@ -130,6 +151,16 @@
             <version>${poi.version}</version>
         </dependency>
 
+        <!-- 决策智能体：Spring AI + OpenAI 兼容协议接入国产大模型（DeepSeek）。
+             引入理由：竞赛要求作品「依托人工智能技术开发」，而系统此前的「Agent」是
+             MQ 流水线上的数据角色（采集/质控/预报/告警/报表），并无大模型能力。
+             选用 OpenAI 兼容 starter 而非厂商专属模块：DeepSeek/通义/智谱均提供
+             OpenAI 兼容接口，换厂商只需改 base-url 与 model，不锁定单一供应商。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
         <!-- 监控 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -170,8 +201,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- 本机 JDK 版本高于 Spring Boot 3.2.9 内置 Byte Buddy 支持的版本时，
-                         Mockito 无法生成 mock（报 "Byte Buddy could not instrument all classes"）。
+                    <!-- 本机 JDK 版本高于 Byte Buddy 支持的版本时，Mockito 无法生成 mock
+                         （报 "Byte Buddy could not instrument all classes"）。
                          该开关允许其对新版本 class 文件继续插桩，仅作用于测试进程，不影响产物。 -->
                     <argLine>-Dnet.bytebuddy.experimental=true</argLine>
                 </configuration>

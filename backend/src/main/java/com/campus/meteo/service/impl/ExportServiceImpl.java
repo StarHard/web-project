@@ -16,6 +16,7 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,7 +46,6 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ExportServiceImpl implements ExportService {
 
     private static final String KEY_TASK = "meteo:export:task:";
@@ -74,6 +74,21 @@ public class ExportServiceImpl implements ExportService {
     private final DataQueryService dataQueryService;
     private final StringRedisTemplate redisTemplate;
     private final TaskExecutor taskExecutor;
+
+    /**
+     * 显式构造而非 @RequiredArgsConstructor：Spring Boot 3.5 起容器中同时存在
+     * applicationTaskExecutor 与 taskScheduler 两个 TaskExecutor 候选（后者是
+     * ThreadPoolTaskScheduler，同样实现了 AsyncTaskExecutor），按类型注入会产生歧义。
+     * 这里显式指定应用级线程池，与升级前的行为一致（导出为长任务，但历史行为如此，不改变）。
+     * 注：Lombok 默认不会把字段上的 @Qualifier 复制到生成的构造参数，故必须手写构造器。
+     */
+    public ExportServiceImpl(DataQueryService dataQueryService,
+                             StringRedisTemplate redisTemplate,
+                             @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor) {
+        this.dataQueryService = dataQueryService;
+        this.redisTemplate = redisTemplate;
+        this.taskExecutor = taskExecutor;
+    }
 
     @Value("${meteo.export.dir:./exports}")
     private String exportDir;
