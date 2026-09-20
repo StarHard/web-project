@@ -2,7 +2,7 @@ package com.campus.meteo.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.campus.meteo.agent.collector.CollectorAgent;
+import com.campus.meteo.agent.realtime.RealtimeCache;
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
 import com.campus.meteo.common.result.PageResult;
@@ -13,6 +13,7 @@ import com.campus.meteo.dto.StationSaveReq;
 import com.campus.meteo.entity.AlertRecord;
 import com.campus.meteo.entity.Device;
 import com.campus.meteo.entity.Station;
+import com.campus.meteo.influx.ObsData;
 import com.campus.meteo.mapper.AlertRecordMapper;
 import com.campus.meteo.mapper.DeviceMapper;
 import com.campus.meteo.mapper.StationMapper;
@@ -21,10 +22,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -40,7 +41,7 @@ public class StationServiceImpl implements StationService {
     private final StationMapper stationMapper;
     private final DeviceMapper deviceMapper;
     private final AlertRecordMapper alertRecordMapper;
-    private final StringRedisTemplate redisTemplate;
+    private final RealtimeCache realtimeCache;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -189,17 +190,17 @@ public class StationServiceImpl implements StationService {
         return resp;
     }
 
-    /** 读取采集Agent写入的最新报文缓存，缓存缺失不影响主流程 */
+    /** 读取质控Agent写入的最新观测缓存，缓存缺失不影响主流程 */
     private JsonNode readLatest(String stationCode) {
-        String payload = redisTemplate.opsForValue().get(CollectorAgent.REDIS_KEY_LATEST + stationCode);
-        if (payload == null) {
+        ObsData obs = realtimeCache.find(stationCode);
+        if (obs == null) {
             return null;
         }
-        try {
-            return objectMapper.readTree(payload);
-        } catch (Exception e) {
-            log.warn("最新报文缓存解析失败: station={}, err={}", stationCode, e.getMessage());
-            return null;
-        }
+        // 只输出对外口径需要的字段，不透出 msgId 等链路内部字段
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("ts", obs.getTs() == null ? null : obs.getTs().toString());
+        summary.put("qcFlag", obs.getQcFlag());
+        summary.put("elements", obs.getElements());
+        return objectMapper.valueToTree(summary);
     }
 }

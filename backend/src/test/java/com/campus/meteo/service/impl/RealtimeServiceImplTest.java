@@ -2,7 +2,9 @@ package com.campus.meteo.service.impl;
 
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
+import com.campus.meteo.agent.realtime.RealtimeCache;
 import com.campus.meteo.dto.RealtimeCompareResp;
+import com.campus.meteo.dto.RealtimeLatestResp;
 import com.campus.meteo.entity.Station;
 import com.campus.meteo.influx.ObsData;
 import com.campus.meteo.influx.ObsReader;
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,9 +47,57 @@ class RealtimeServiceImplTest {
     private StationMapper stationMapper;
     @Mock
     private ObsReader obsReader;
+    @Mock
+    private RealtimeCache realtimeCache;
 
     @InjectMocks
     private RealtimeServiceImpl realtimeService;
+
+    @Test
+    @DisplayName("最新观测：命中缓存时不再查时序库")
+    void shouldServeLatestFromCache() {
+        Instant ts = at(10, 0);
+        when(realtimeCache.find("CAMPUS01")).thenReturn(
+                ObsData.builder().stationCode("CAMPUS01").ts(ts).elements(Map.of("temp", 21.5)).qcFlag("passed").build());
+
+        RealtimeLatestResp resp = realtimeService.latest("CAMPUS01");
+
+        assertThat(resp.getSource()).isEqualTo("cache");
+        assertThat(resp.getStationCode()).isEqualTo("CAMPUS01");
+        assertThat(resp.getQcFlag()).isEqualTo("passed");
+        assertThat(resp.getElements()).containsEntry("temp", 21.5);
+        assertThat(resp.getTs()).isEqualTo(ts.toString());
+        // 缓存命中不应产生时序库查询
+        verify(obsReader, never()).queryLatest(anyString());
+    }
+
+    @Test
+    @DisplayName("最新观测：缓存缺失时降级查时序库")
+    void shouldFallbackToInfluxWhenCacheMisses() {
+        Instant ts = at(10, 15);
+        when(realtimeCache.find("CAMPUS01")).thenReturn(null);
+        when(obsReader.queryLatest("CAMPUS01")).thenReturn(
+                ObsData.builder().stationCode("CAMPUS01").ts(ts).elements(Map.of("temp", 22.0)).qcFlag("revised").build());
+
+        RealtimeLatestResp resp = realtimeService.latest("CAMPUS01");
+
+        assertThat(resp.getSource()).isEqualTo("influx");
+        assertThat(resp.getQcFlag()).isEqualTo("revised");
+        assertThat(resp.getTs()).isEqualTo(ts.toString());
+    }
+
+    @Test
+    @DisplayName("最新观测：两条路径都无数据时返回 none")
+    void shouldReportNoneWhenNoData() {
+        when(realtimeCache.find("CAMPUS01")).thenReturn(null);
+        when(obsReader.queryLatest("CAMPUS01")).thenReturn(null);
+
+        RealtimeLatestResp resp = realtimeService.latest("CAMPUS01");
+
+        assertThat(resp.getSource()).isEqualTo("none");
+        assertThat(resp.getElements()).isNull();
+        assertThat(resp.getTs()).isNull();
+    }
 
     @Test
     @DisplayName("时间轴取并集，各站序列对齐补 null 并给出统计量")

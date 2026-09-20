@@ -2,7 +2,9 @@ package com.campus.meteo.service.impl;
 
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
+import com.campus.meteo.agent.realtime.RealtimeCache;
 import com.campus.meteo.dto.RealtimeCompareResp;
+import com.campus.meteo.dto.RealtimeLatestResp;
 import com.campus.meteo.entity.Station;
 import com.campus.meteo.influx.ObsData;
 import com.campus.meteo.influx.ObsReader;
@@ -57,6 +59,35 @@ public class RealtimeServiceImpl implements RealtimeService {
 
     private final StationMapper stationMapper;
     private final ObsReader obsReader;
+    private final RealtimeCache realtimeCache;
+
+    @Override
+    public RealtimeLatestResp latest(String stationCode) {
+        RealtimeLatestResp resp = new RealtimeLatestResp();
+        resp.setStationCode(stationCode);
+
+        ObsData cached = realtimeCache.find(stationCode);
+        if (cached != null) {
+            resp.setSource("cache");
+            fill(resp, cached);
+            return resp;
+        }
+
+        ObsData obs = obsReader.queryLatest(stationCode);
+        if (obs == null) {
+            resp.setSource("none");
+            return resp;
+        }
+        resp.setSource("influx");
+        fill(resp, obs);
+        return resp;
+    }
+
+    private void fill(RealtimeLatestResp resp, ObsData obs) {
+        resp.setTs(obs.getTs() == null ? null : obs.getTs().toString());
+        resp.setElements(obs.getElements());
+        resp.setQcFlag(obs.getQcFlag());
+    }
 
     @Override
     public RealtimeCompareResp compare(String stationIds, String element, String startTime,

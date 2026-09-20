@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -47,8 +46,6 @@ class CollectorAgentHealthCheckTest {
     private MqProducer mqProducer;
     @Mock
     private StationMapper stationMapper;
-    @Mock
-    private StringRedisTemplate redisTemplate;
 
     private MqttProperties properties;
     private CollectorAgent agent;
@@ -60,8 +57,7 @@ class CollectorAgentHealthCheckTest {
         properties.setTopic(TOPIC);
         properties.setStaleThresholdMs(600_000);
         properties.setManualReconnectAfterMs(300_000);
-        agent = new CollectorAgent(properties, obsWriter, mqProducer, stationMapper,
-                redisTemplate, new ObjectMapper());
+        agent = new CollectorAgent(properties, obsWriter, mqProducer, stationMapper, new ObjectMapper());
         ReflectionTestUtils.setField(agent, "mqttClient", mqttClient);
     }
 

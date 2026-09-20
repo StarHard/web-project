@@ -110,7 +110,7 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /realtime/latest?stationCode= | 站点最新一条全要素数据（Redis 缓存，无缓存时降级查 InfluxDB） | 公开 |
+| GET | /realtime/latest?stationCode= | 站点最新观测（优先读实时缓存，缺失时降级查时序库；两条路径均为质控后数据，统一返回 source/ts/elements/qcFlag） | 公开 |
 | GET | /realtime/curve?stationCode=&hours=24&granularity=auto | 最近 N 小时要素曲线（hours 上限 168；granularity 取 raw/5m/15m/1h/1d/auto） | 公开 |
 | GET | /realtime/compare?stationIds=&element=&startTime=&endTime=&granularity=auto | 多站点同要素对比（时间轴取并集对齐，缺测为 null；单次最多 6 站，跨度上限 7 天） | 登录 |
 | WS | /ws/realtime | 实时数据推送，仅推**质控通过**的数据（与 `/realtime/curve` 同口径）。订阅：`{"action":"subscribe","stationCode":"CAMPUS01"}`（`"*"` 订阅全部）；推送：`{"type":"latest","stationCode":"CAMPUS01","ts":"…","qcFlag":"passed","elements":{…}}` | 公开 |

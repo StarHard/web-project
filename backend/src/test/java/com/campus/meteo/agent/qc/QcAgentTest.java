@@ -70,6 +70,8 @@ class QcAgentTest {
     private Channel channel;
     @Mock
     private com.campus.meteo.agent.realtime.RealtimeWebSocketHandler realtimeWebSocketHandler;
+    @Mock
+    private com.campus.meteo.agent.realtime.RealtimeCache realtimeCache;
 
     private QcAgent qcAgent;
 
@@ -77,7 +79,7 @@ class QcAgentTest {
     void setUp() {
         qcAgent = new QcAgent(obsWriter, obsReader, thresholdService, qcReviewTaskMapper,
                 stationMapper, redisTemplate, mqProducer, new InterpolationService(),
-                realtimeWebSocketHandler);
+                realtimeWebSocketHandler, realtimeCache);
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         lenient().when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
                 .thenReturn(true);
@@ -106,7 +108,7 @@ class QcAgentTest {
     }
 
     @Test
-    @DisplayName("要素均在有效区间内 → 标记 passed 并分发到告警链路与实时推送")
+    @DisplayName("要素均在有效区间内 → 标记 passed 并分发到告警链路、实时推送与最新缓存")
     void shouldMarkPassedAndDispatchWhenAllChecksPass() throws Exception {
         stubTempThresholds(40.0, -10.0, 5.0);
         when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("temp", 24.0));
@@ -119,9 +121,10 @@ class QcAgentTest {
         verify(obsWriter).writeObs(obs);
         verify(qcReviewTaskMapper, never()).insert(any(QcReviewTask.class));
         verify(mqProducer).send(eq(MqTopics.METEO_QC), eq(obs));
-        // 实时推送必须推质控后的数据：在采集侧推送时 qc_flag 还是 raw，
-        // 会把随后被判定为可疑的尖峰值推给订阅者，与 /realtime/curve 口径不一致
+        // 实时推送与最新缓存都必须写质控后的数据：在采集侧写入时 qc_flag 还是 raw，
+        // 会把随后被判定为可疑的尖峰值推给订阅者/缓存下来，与 /realtime/curve 口径不一致
         verify(realtimeWebSocketHandler).push(obs);
+        verify(realtimeCache).save(obs);
         verify(channel).basicAck(DELIVERY_TAG, false);
     }
 
@@ -140,9 +143,10 @@ class QcAgentTest {
         assertThat(task.getQcType()).isEqualTo(1);
         assertThat(task.getObsValue()).isEqualByComparingTo("55.0");
         assertThat(task.getStatus()).isZero();
-        // 可疑数据不得进入告警链路，也不得实时推送（曲线里同样不展示可疑值）
+        // 可疑数据不得进入告警链路，也不得实时推送/写缓存（曲线里同样不展示可疑值）
         verify(mqProducer, never()).send(anyString(), any());
         verify(realtimeWebSocketHandler, never()).push(any(ObsData.class));
+        verify(realtimeCache, never()).save(any(ObsData.class));
     }
 
     @Test

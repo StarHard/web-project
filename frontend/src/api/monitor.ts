@@ -34,7 +34,7 @@ export interface Station {
   lastReportTime?: string
   commissionDate?: string
   devices?: Device[]
-  latest?: { ts?: number; elements?: Record<string, number> } | null
+  latest?: { ts?: string; qcFlag?: string; elements?: Record<string, number> } | null
 }
 
 export interface StationMapPoint {
@@ -107,11 +107,22 @@ export function createMaintenance(data: Record<string, unknown>) {
 }
 
 /** 实时监测 */
+export interface RealtimeLatest {
+  /** 数据来源：cache 缓存 / influx 时序库 / none 无数据 */
+  source: 'cache' | 'influx' | 'none'
+  stationCode: string
+  ts: string | null
+  elements: Record<string, number> | null
+  qcFlag: string | null
+}
+
+/**
+ * 站点最新观测
+ *
+ * 缓存与降级查询两条路径返回同一结构、同一质控口径（均为质控后数据）。
+ */
 export function latestRealtime(stationCode: string) {
-  return request<{ source: string; payload?: string; ts?: string; elements?: Record<string, number> }>({
-    url: '/realtime/latest',
-    params: { stationCode }
-  })
+  return request<RealtimeLatest>({ url: '/realtime/latest', params: { stationCode } })
 }
 
 export interface ObsPoint {

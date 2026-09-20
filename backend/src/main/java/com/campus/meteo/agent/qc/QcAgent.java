@@ -37,7 +37,7 @@ import java.util.Set;
  * 1. 消费 topic.meteo.raw
  * 2. 极值检查 + 时间一致性检查 + 空间一致性检查（阈值来自 sys_config 的 qc.* 参数）
  * 3. 全部通过 → 写入 qc_flag=passed；存在可疑要素 → 写入 qc_flag=suspect 并生成人工审核任务
- * 4. 质控结果发布到 topic.meteo.qc 供告警/报表Agent消费；通过的数据同时走 WebSocket 实时推送
+ * 4. 质控结果发布到 topic.meteo.qc 供告警/报表Agent消费；通过的数据同时走 WebSocket 实时推送并写实时缓存
  * 消费端幂等：msgId + Redis 去重
  */
 @Slf4j
@@ -54,6 +54,7 @@ public class QcAgent {
     private final com.campus.meteo.mq.MqProducer mqProducer;
     private final InterpolationService interpolationService;
     private final com.campus.meteo.agent.realtime.RealtimeWebSocketHandler realtimeWebSocketHandler;
+    private final com.campus.meteo.agent.realtime.RealtimeCache realtimeCache;
 
     /** 幂等去重键前缀 */
     private static final String KEY_DEDUP = "meteo:mq:dedup:";
@@ -102,9 +103,10 @@ public class QcAgent {
             // 质控后数据分发（仅通过的数据进入告警链路，可疑数据由人工审核闭环）
             if (QcFlag.PASSED.getValue().equals(qcFlag)) {
                 mqProducer.send(MqTopics.METEO_QC, obs);
-                // 实时推送同样只推质控通过的数据：与 /realtime/curve 的口径保持一致，
-                // 否则订阅者会看到被本环节判定为可疑、在曲线里根本不会出现的尖峰值
+                // 实时推送与最新数据缓存同样只写质控通过的数据：与 /realtime/curve 的口径保持一致，
+                // 否则订阅者/实时接口会看到被本环节判定为可疑、在曲线里根本不会出现的尖峰值
                 realtimeWebSocketHandler.push(obs);
+                realtimeCache.save(obs);
             }
             log.info("质控完成: station={}, qc={}, msgId={}", obs.getStationCode(), qcFlag, obs.getMsgId());
             channel.basicAck(deliveryTag, false);

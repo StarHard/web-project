@@ -1,11 +1,19 @@
 package com.campus.meteo.service;
 
 import com.campus.meteo.dto.RealtimeCompareResp;
+import com.campus.meteo.dto.RealtimeLatestResp;
 
 /**
  * 实时监测服务
  */
 public interface RealtimeService {
+
+    /**
+     * 站点最新观测（优先读实时缓存，缺失时降级查时序库）
+     *
+     * 两条路径的质控口径一致：缓存由质控Agent写入，降级查询按质控标记过滤。
+     */
+    RealtimeLatestResp latest(String stationCode);
 
     /**
      * 多站点同要素对比（FR-RT-04）

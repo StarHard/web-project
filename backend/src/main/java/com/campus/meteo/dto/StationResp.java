@@ -39,6 +39,6 @@ public class StationResp {
     @Schema(description = "设备清单（仅详情接口返回）")
     private List<DeviceResp> devices;
 
-    @Schema(description = "最新观测摘要（Redis 缓存原始报文）")
+    @Schema(description = "最新观测摘要（实时缓存，质控后数据：ts/qcFlag/elements）")
     private JsonNode latest;
 }

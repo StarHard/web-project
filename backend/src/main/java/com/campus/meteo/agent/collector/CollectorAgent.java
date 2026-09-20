@@ -22,7 +22,6 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +36,7 @@ import java.util.UUID;
  * 采集Agent：
  * 1. 订阅 MQTT 上行主题 meteo/{stationCode}/up
  * 2. 报文解析与单位归一，写入 InfluxDB（qc_flag=raw）
- * 3. 更新 Redis 站点最新数据缓存与 MySQL 站点在线状态
+ * 3. 更新 MySQL 站点在线状态与最后上报时间
  * 4. 发布标准化数据到 MQ topic.meteo.raw 供质控Agent消费
  * 5. 链路体检兜底（FR-QC-01）：定时检查连接与订阅是否仍有效，失效则自愈
  */
@@ -46,13 +45,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CollectorAgent {
 
-    public static final String REDIS_KEY_LATEST = "meteo:realtime:";
-
     private final MqttProperties mqttProperties;
     private final ObsWriter obsWriter;
     private final MqProducer mqProducer;
     private final StationMapper stationMapper;
-    private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
     private MqttClient mqttClient;
@@ -197,13 +193,12 @@ public class CollectorAgent {
             obs.setQcFlag(QcFlag.RAW.getValue());
             obsWriter.writeObs(obs);
 
-            // 2. Redis 缓存最新数据（实时接口直读）
-            redisTemplate.opsForValue().set(REDIS_KEY_LATEST + stationCode, payload);
-
-            // 3. 更新站点在线状态与最后上报时间
+            // 2. 更新站点在线状态与最后上报时间
+            // 注意：在线状态与数据新鲜度按「是否上报」判定，与质控结论无关，故留在采集侧；
+            // 而对外展示的最新数据缓存由质控Agent写入（见 RealtimeCache）
             updateStationStatus(stationCode);
 
-            // 4. 分发到质控链路
+            // 3. 分发到质控链路
             mqProducer.send(MqTopics.METEO_RAW, obs);
 
             log.info("采集完成: station={}, msgId={}", stationCode, msgId);
