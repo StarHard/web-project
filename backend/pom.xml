@@ -23,6 +23,8 @@
         <springdoc.version>2.5.0</springdoc.version>
         <jjwt.version>0.12.6</jjwt.version>
         <influxdb-client.version>7.2.0</influxdb-client.version>
+        <!-- Excel 导出用（FR-DS-04），版本与 Spring Boot 3.2 兼容 -->
+        <poi.version>5.2.5</poi.version>
         <!-- 覆盖 Spring Boot 3.2.9 默认 Lombok 版本以兼容 JDK 21+ 的注解处理 -->
         <lombok.version>1.18.42</lombok.version>
     </properties>
@@ -116,6 +118,16 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- Excel 导出（FR-DS-04）：Apache POI 生成 xlsx。
+             引入理由：SRS 的 FR-DS-04 要求导出支持 Excel/CSV/TXT，而 xlsx 本质是 ZIP+OOXML
+             多文件结构，手写需自行拼装 [Content_Types].xml、sheet、sharedStrings 并处理转义，
+             维护成本远高于引入成熟库。已就此事征得同意后引入。 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
 
         <!-- 监控 -->

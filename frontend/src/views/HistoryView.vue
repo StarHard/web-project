@@ -161,7 +161,7 @@ async function handleReset(): Promise<void> {
 }
 
 /** 异步导出：提交任务后轮询状态，完成后自动下载 */
-async function handleExport(format: 'csv' | 'txt'): Promise<void> {
+async function handleExport(format: 'excel' | 'csv' | 'txt'): Promise<void> {
   if (!filters.value.stationId) {
     toastError('请先选择站点')
     return
@@ -221,6 +221,7 @@ onMounted(async () => {
         <p class="page-subtitle">时序数据查询、统计与导出（数据源 InfluxDB）</p>
       </div>
       <div class="row">
+        <button class="btn" :disabled="!!exportStatus" @click="handleExport('excel')">导出 Excel</button>
         <button class="btn" :disabled="!!exportStatus" @click="handleExport('csv')">导出 CSV</button>
         <button class="btn" :disabled="!!exportStatus" @click="handleExport('txt')">导出 TXT</button>
         <span v-if="exportStatus" style="font-size: 12px; color: var(--text-muted)">{{ exportStatus }}</span>

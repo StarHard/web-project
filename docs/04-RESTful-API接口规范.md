@@ -117,8 +117,9 @@
 | GET | /stats/yearly?stationId=&year= | 年统计 | 登录 |
 | GET | /stats/extreme?stationId=&element=&startTime=&endTime= | 极值统计 | 登录 |
 | GET | /stats/climate?stationId=&month=&element= | 气候平均值对比（同期多年） | 登录 |
-| GET | /export?stationId=&elements=&startTime=&endTime=&format=excel/csv/txt | 异步导出，返回任务 ID | USER+ |
+| GET | /export?stationId=&elements=&startTime=&endTime=&format=excel/csv/txt | 异步导出，返回任务 ID（excel 生成 xlsx） | USER+ |
 | GET | /export/tasks/{taskId} | 查询导出任务状态与下载地址 | USER+ |
+| GET | /export/tasks/{taskId}/download | 下载导出文件（任务完成后方可下载） | USER+ |
 
 ### 2.5 预报（/forecasts）
 

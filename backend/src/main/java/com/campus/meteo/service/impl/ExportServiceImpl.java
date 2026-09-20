@@ -10,12 +10,19 @@ import com.campus.meteo.service.DataQueryService;
 import com.campus.meteo.service.ExportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,6 +32,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -50,8 +58,18 @@ public class ExportServiceImpl implements ExportService {
     private static final Duration TASK_TTL = Duration.ofHours(1);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 暂支持的导出格式（excel 需引入 POI 依赖，待评估后再开放） */
-    private static final Set<String> SUPPORTED_FORMATS = Set.of("csv", "txt");
+    /** 支持的导出格式（excel 生成 xlsx，见 toXlsx） */
+    private static final Set<String> SUPPORTED_FORMATS = Set.of("csv", "txt", "excel");
+
+    /** 导出文件名后缀：excel 对应 xlsx */
+    private static final String EXT_EXCEL = "xlsx";
+
+    /**
+     * xlsx 写入时驻留内存的行数，超出部分落临时文件。
+     * 导出固定按分钟粒度取数，数天的数据可达数十万行，全量驻留内存会把堆撑爆，
+     * 因此用 SXSSF 流式写出。
+     */
+    private static final int XLSX_ROW_WINDOW = 500;
 
     private final DataQueryService dataQueryService;
     private final StringRedisTemplate redisTemplate;
@@ -65,7 +83,7 @@ public class ExportServiceImpl implements ExportService {
                          String format, String clientToken) {
         String fmt = StringUtils.hasText(format) ? format.toLowerCase() : "csv";
         if (!SUPPORTED_FORMATS.contains(fmt)) {
-            throw new BizException(ErrorCode.PARAM_ERROR, "暂不支持的导出格式: " + fmt + "，当前支持 csv/txt");
+            throw new BizException(ErrorCode.PARAM_ERROR, "暂不支持的导出格式: " + fmt + "，当前支持 csv/txt/excel");
         }
 
         Long userId = SecurityUtils.getCurrentUserId();
@@ -147,12 +165,17 @@ public class ExportServiceImpl implements ExportService {
                           String startTime, String endTime, String format) {
         try {
             HistoryResp history = dataQueryService.history(stationId, elements, startTime, endTime, "min", null);
-            String content = "csv".equals(format) ? toCsv(history) : toTxt(history);
+            byte[] content = switch (format) {
+                case "excel" -> toXlsx(history);
+                case "txt" -> toTxt(history).getBytes(StandardCharsets.UTF_8);
+                default -> toCsv(history).getBytes(StandardCharsets.UTF_8);
+            };
+            String extension = "excel".equals(format) ? EXT_EXCEL : format;
 
             Path dir = Paths.get(exportDir).toAbsolutePath().normalize();
             Files.createDirectories(dir);
-            Path file = dir.resolve("export_%d_%s.%s".formatted(stationId, taskId, format));
-            Files.writeString(file, content, StandardCharsets.UTF_8);
+            Path file = dir.resolve("export_%d_%s.%s".formatted(stationId, taskId, extension));
+            Files.write(file, content);
 
             Map<String, String> update = new HashMap<>();
             update.put("status", "SUCCESS");
@@ -193,5 +216,63 @@ public class ExportServiceImpl implements ExportService {
             sb.append('\n');
         });
         return sb.toString();
+    }
+
+    /**
+     * 生成 xlsx（FR-DS-04）。
+     *
+     * 用 SXSSF 流式写出而非 XSSF：导出固定按分钟粒度取数，数天数据可达数十万行，
+     * XSSF 会把全部行驻留内存。表头加粗、冻结首行、列宽固定，便于人工查看。
+     * 列结构与 csv/txt 保持一致（要素 / 时间 / 数值 / 质控标记），要素名沿用原始键，
+     * 避免与其它两种格式产生口径差异。
+     */
+    private byte[] toXlsx(HistoryResp history) {
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(XLSX_ROW_WINDOW)) {
+            workbook.setCompressTempFiles(true);
+            Sheet sheet = workbook.createSheet("历史数据");
+
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+
+            String[] titles = {"要素", "时间", "数值", "质控标记"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < titles.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(titles[i]);
+                cell.setCellStyle(headerStyle);
+            }
+            sheet.createFreezePane(0, 1);
+            sheet.setColumnWidth(0, 12 * 256);
+            sheet.setColumnWidth(1, 22 * 256);
+            sheet.setColumnWidth(2, 12 * 256);
+            sheet.setColumnWidth(3, 12 * 256);
+
+            int rowIndex = 1;
+            for (Map.Entry<String, List<SeriesPoint>> entry : history.getSeries().entrySet()) {
+                for (SeriesPoint point : entry.getValue()) {
+                    Row row = sheet.createRow(rowIndex++);
+                    row.createCell(0).setCellValue(entry.getKey());
+                    row.createCell(1).setCellValue(point.getTime());
+                    Cell valueCell = row.createCell(2);
+                    if (point.getValue() == null) {
+                        valueCell.setBlank();
+                    } else {
+                        valueCell.setCellValue(point.getValue());
+                    }
+                    row.createCell(3).setCellValue(point.getQcFlag() == null ? "" : point.getQcFlag());
+                }
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            // 显式清理 SXSSF 落盘的临时文件（close 亦会调用，此处确保异常路径下也回收）
+            workbook.dispose();
+            return out.toByteArray();
+        } catch (IOException e) {
+            log.error("xlsx 生成失败: station={}, err={}", history.getStationCode(), e.getMessage(), e);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "Excel 文件生成失败");
+        }
     }
 }
