@@ -1,0 +1,31 @@
+package com.campus.meteo.config;
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * 决策智能体配置：Spring AI 的 ChatClient（OpenAI 兼容协议 → 国产大模型）
+ *
+ * 系统提示词约束「只依据工具返回的真实数据作答、缺数据就说无数据」，
+ * 这是气象决策场景的底线——大模型幻觉出的气温/预警会被直接采信并影响处置动作。
+ * 工具（实时/历史/预报/告警查询）在后续迭代中通过 .defaultTools() 注册。
+ */
+@Configuration
+public class AiConfig {
+
+    private static final String SYSTEM_PROMPT = """
+            你是校园气象智能决策助手，服务对象是高校后勤、宿管与农业试验站管理人员。
+            回答要求：
+            1. 只依据工具返回的真实观测、预报与告警数据作答，严禁编造或推测数值；
+            2. 数据缺失时明确说明「无数据」，不要用常识值代替；
+            3. 涉及风险时给出可执行的处置建议（如暂停户外活动、加固设施、推迟灌溉）；
+            4. 要素名称与单位用中文，数值保留一位小数；
+            5. 回答控制在 200 字以内，先给结论再给依据。
+            """;
+
+    @Bean
+    public ChatClient meteoChatClient(ChatClient.Builder builder) {
+        return builder.defaultSystem(SYSTEM_PROMPT).build();
+    }
+}

@@ -18,6 +18,17 @@ spring:
       simple:
         acknowledge-mode: manual
         default-requeue-rejected: false
+  # 决策智能体：走 OpenAI 兼容协议接入国产大模型（默认 DeepSeek）。
+  # 换厂商只需改 base-url 与 model（通义/智谱均提供 OpenAI 兼容接口），不锁定供应商。
+  # api-key 缺失或无效时助手接口降级为提示信息，不影响系统其它功能。
+  ai:
+    openai:
+      base-url: ${LLM_BASE_URL:https://api.deepseek.com}
+      api-key: ${LLM_API_KEY:changeme}
+      chat:
+        options:
+          model: ${LLM_MODEL:deepseek-chat}
+          temperature: 0.3
 
 # JWT 配置（密钥须通过环境变量注入，生产环境严禁写死）
 meteo:
