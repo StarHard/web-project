@@ -35,6 +35,12 @@ meteo:
     username: ${MQTT_USER:meteo}
     password: ${MQTT_PASSWORD:changeme}
     topic: ${MQTT_TOPIC:meteo/+/up}
+    # 链路体检兜底（FR-QC-01）：定时检查连接与订阅是否仍有效
+    health-check-delay-ms: ${MQTT_HEALTH_CHECK_DELAY_MS:60000}
+    # 连接正常但超过该时长未收到任何上行消息，判定订阅可能失效并主动重订阅
+    stale-threshold-ms: ${MQTT_STALE_THRESHOLD_MS:600000}
+    # 断线后等待 automaticReconnect 恢复的上限，超过则主动重连兜底
+    manual-reconnect-after-ms: ${MQTT_MANUAL_RECONNECT_AFTER_MS:300000}
   # 数据模拟器（开发环境默认开启，生产必须置为 false）
   simulator:
     enabled: ${SIMULATOR_ENABLED:true}
