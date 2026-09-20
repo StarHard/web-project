@@ -10,8 +10,8 @@
 | 项 | 选型 |
 |---|---|
 | 语言/JDK | Java 17 |
-| 后端框架 | Spring Boot 3.2+ / Spring Security / MyBatis Plus 3.5 |
-| AI | Spring AI 1.0 / LangChain4j 1.0 |
+| 后端框架 | Spring Boot 3.5 / Spring Security / MyBatis Plus 3.5 |
+| AI | Spring AI 1.1.8（OpenAI 兼容协议接入国产大模型，默认 DeepSeek；换厂商只改 base-url 与 model） |
 | 中间件 | RabbitMQ 3.12 / Redis 7 / EMQX 5 / Nginx 1.24 |
 | 数据 | MySQL 8 / InfluxDB 2.7 |
 | 前端 | Vue 3.4+ / Vite / Pinia / ECharts 5 / 高德地图 / DataV |
@@ -52,7 +52,9 @@ software/
 │       │   │   ├── qc/             # 质控 Agent
 │       │   │   ├── forecast/       # 预报 Agent（含模型适配）
 │       │   │   ├── alert/          # 告警 Agent
-│       │   │   └── report/         # 报表 Agent
+│       │   │   ├── report/         # 报表 Agent
+│       │   │   ├── realtime/       # 实时推送与最新数据缓存（WebSocket / Redis）
+│       │   │   └── assistant/      # 决策智能体（大模型 + 工具调用，面向用户问答）
 │       │   ├── mq/                 # RabbitMQ 生产/消费者、Topic 常量
 │       │   ├── influx/             # InfluxDB 读写封装
 │       │   └── security/           # JWT 过滤器、UserDetailsService、RBAC

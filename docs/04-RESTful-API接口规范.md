@@ -214,6 +214,15 @@
 | GET | /roles/permissions | 权限清单（供角色权限配置选择） | sys:manage |
 | POST / PUT | /roles | 角色新增 / 权限全量重设 | sys:manage |
 
+### 2.10 智能助手（/assistant）
+
+| 方法 | 路径 | 说明 | 权限 |
+|---|---|---|---|
+| POST | /assistant/chat | 气象决策助手对话：`{"question":"昨天哪个站点风速最大？"}`，由大模型规划并调用气象数据工具后作答；大模型不可用时返回 `source=unavailable` 的提示而非报错 | 登录 |
+
+> 大模型经 OpenAI 兼容协议接入（默认 DeepSeek，见 `spring.ai.openai.*`，密钥走环境变量 `LLM_API_KEY`）。
+> 返回结构：`{answer, source: llm|unavailable, model}`。
+
 ---
 
 ## 3. 典型接口示例
