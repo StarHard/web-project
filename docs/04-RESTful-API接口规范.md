@@ -76,6 +76,32 @@
 
 > 时序库以站点编码为 tag，直接按编码查询可省去一次业务库查档；业务库资源以主键关联，故按 ID 传参。新增接口须遵循本约定，不得混用。
 
+### 1.7 权限模型与权限列口径
+
+接口鉴权以**权限点**（`permission.perm_code`）为准，角色只是权限点的集合，
+授予关系见 `V1__init.sql` 的 `role_permission` 种子数据（ADMIN 持有全部权限）。
+
+下表各接口的「权限」列取值含义：
+
+- `公开`：无需认证。对应 `SecurityConfig` 的 `WHITELIST`（无条件放行）或 `PUBLIC_GET`（仅放行 GET）
+- `登录`：任意已认证用户，无权限点要求（`isAuthenticated()`）
+- `xxx:yyy`：需持有该权限点（`@PreAuthorize("hasAuthority('xxx:yyy')")`）
+
+| 权限点 | 说明 | 持有角色 |
+|---|---|---|
+| station:view / station:edit | 站点查看 / 站点维护 | 全部角色 / ADMIN |
+| device:view / device:edit | 设备查看 / 设备维护 | FORECASTER、OPERATOR、ADMIN / OPERATOR、ADMIN |
+| data:query / data:export | 数据查询 / 数据导出 | 全部角色 / FORECASTER、ADMIN |
+| forecast:view / forecast:order | 预报查看 / 预报订正 | USER、FORECASTER、ADMIN / FORECASTER、ADMIN |
+| alert:view / alert:manage | 告警查看 / 告警规则维护 | USER、FORECASTER、ADMIN / FORECASTER、ADMIN |
+| qc:review | 质控审核 | FORECASTER、OPERATOR、ADMIN |
+| article:manage | 服务内容管理 | ADMIN |
+| report:generate | 报表生成 | FORECASTER、ADMIN |
+| user:manage / sys:manage | 用户管理 / 系统管理 | ADMIN |
+
+> 注意：`USER` 角色不含 `data:export` 与 `device:view`，`OPERATOR` 不含 `alert:view`——
+> 前端页面路由守卫按角色放行，接口最终以权限点判定，两者需保持一致。
+
 ---
 
 ## 2. 接口清单（按模块）
@@ -85,26 +111,26 @@
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
 | POST | /auth/login | 登录，返回 accessToken/refreshToken | 公开 |
-| POST | /auth/refresh | 刷新 Token | 携带有效 refreshToken |
+| POST | /auth/refresh | 刷新 Token | 公开（凭 refreshToken） |
 | POST | /auth/logout | 登出（Token 加入黑名单） | 登录 |
 | GET | /auth/profile | 当前用户信息+权限列表 | 登录 |
-| GET | /users | 用户分页列表（keyword 过滤） | ADMIN |
-| POST | /users | 新增用户 | ADMIN |
-| PUT | /users/{id} | 修改用户（含角色分配） | ADMIN |
-| PATCH | /users/{id}/status | 启用/禁用 | ADMIN |
+| GET | /users | 用户分页列表（keyword 过滤） | user:manage |
+| POST | /users | 新增用户 | user:manage |
+| PUT | /users/{id} | 修改用户（含角色分配） | user:manage |
+| PATCH | /users/{id}/status | 启用/禁用 | user:manage |
 
 ### 2.2 站点与设备（/stations, /devices）
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /stations | 站点列表（含在线状态、最新数据摘要） | 登录（游客可见简化版） |
-| GET | /stations/{id} | 站点详情（档案+设备清单） | 登录 |
-| POST / PUT / DELETE | /stations | 站点档案维护 | ADMIN |
+| GET | /stations | 站点分页列表（含在线状态、最新数据摘要） | station:view |
+| GET | /stations/{id} | 站点详情（档案+设备清单+最新观测） | station:view |
+| POST / PUT / DELETE | /stations | 站点档案维护 | station:edit |
 | GET | /stations/map | 地图站点聚合（坐标+状态+告警角标） | 公开 |
-| GET | /devices?stationId= | 设备列表 | 登录 |
-| POST / PUT / DELETE | /devices | 设备维护 | ADMIN/OPERATOR |
-| GET /maintenance-records?stationId=&deviceId= | 运维记录分页 | 登录 |
-| POST /maintenance-records | 新增运维记录 | OPERATOR |
+| GET | /devices?stationId= | 设备列表 | device:view |
+| POST / PUT / DELETE | /devices | 设备维护 | device:edit |
+| GET /maintenance-records?stationId=&deviceId= | 运维记录分页 | device:view |
+| POST /maintenance-records | 新增运维记录 | device:edit |
 
 ### 2.3 实时监测（/realtime）
 
@@ -124,39 +150,37 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /history?stationId=&elements=&startTime=&endTime=&granularity=min/hour/day&qcFlag= | 历史时序数据（InfluxDB） | 登录 |
-| GET | /stats/daily?stationId=&date= | 日统计（均值/极值及出现时间） | 登录 |
-| GET | /stats/monthly?stationId=&month= | 月统计 | 登录 |
-| GET | /stats/yearly?stationId=&year= | 年统计 | 登录 |
-| GET | /stats/extreme?stationId=&element=&startTime=&endTime= | 极值统计 | 登录 |
-| GET | /stats/climate?stationId=&month=&element= | 气候平均值对比（同期多年） | 登录 |
-| GET | /export?stationId=&elements=&startTime=&endTime=&format=excel/csv/txt | 异步导出，返回任务 ID（excel 生成 xlsx） | USER+ |
-| GET | /export/tasks/{taskId} | 查询导出任务状态与下载地址 | USER+ |
-| GET | /export/tasks/{taskId}/download | 下载导出文件（任务完成后方可下载） | USER+ |
+| GET | /history?stationId=&elements=&startTime=&endTime=&granularity=min/hour/day&qcFlag= | 历史时序数据（InfluxDB） | data:query |
+| GET | /stats/daily?stationId=&date= | 日统计（均值/极值及出现时间） | data:query |
+| GET | /stats/monthly?stationId=&month= | 月统计 | data:query |
+| GET | /stats/yearly?stationId=&year= | 年统计 | data:query |
+| GET | /stats/extreme?stationId=&element=&startTime=&endTime= | 极值统计 | data:query |
+| GET | /stats/climate?stationId=&month=&element= | 气候平均值对比（同期多年） | data:query |
+| GET | /export?stationId=&elements=&startTime=&endTime=&format=excel/csv/txt | 异步导出，返回任务 ID（excel 生成 xlsx） | data:export |
+| GET | /export/tasks/{taskId} | 查询导出任务状态与下载地址 | data:export |
+| GET | /export/tasks/{taskId}/download | 下载导出文件（任务完成后方可下载） | data:export |
 
 ### 2.5 预报（/forecasts）
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
 | GET | /forecasts?stationCode=&model=stat&range=72 | 0–72h 逐小时预报产品（model 取 stat/ml/manual，range 上限 72） | 公开 |
-| GET | /forecasts/model-compare?stationCode=&element=temp&range=72 | 多模型预报对比曲线 | USER+ |
-| GET | /forecasts/verification?stationCode=&model=stat&days=7 | 预报检验评分（MAE/RMSE/TS，days 上限 30） | USER+ |
-| POST | /forecasts/backtest?stationCode=&days=3 | 预报回算：重演历史预报以产出检验样本（省略 stationCode 则全部启用站点，days 上限 7） | USER+ |
-| POST | /forecasts/generate?stationCode= | 手动触发预报 Agent（省略 stationCode 则全部启用站点） | USER+ |
-| POST | /forecasts/{id}/revisions | 预报订正（写 forecast_order） | FORECASTER |
-
-> 权限列口径：`USER+` 对应权限点 `forecast:view`（USER / FORECASTER / ADMIN 均持有），`FORECASTER` 对应 `forecast:order`（仅 FORECASTER / ADMIN）。角色与权限点的授予关系见 `V1__init.sql`。
+| GET | /forecasts/model-compare?stationCode=&element=temp&range=72 | 多模型预报对比曲线 | forecast:view |
+| GET | /forecasts/verification?stationCode=&model=stat&days=7 | 预报检验评分（MAE/RMSE/TS，days 上限 30） | forecast:view |
+| POST | /forecasts/backtest?stationCode=&days=3 | 预报回算：重演历史预报以产出检验样本（省略 stationCode 则全部启用站点，days 上限 7） | forecast:view |
+| POST | /forecasts/generate?stationCode= | 手动触发预报 Agent（省略 stationCode 则全部启用站点） | forecast:view |
+| POST | /forecasts/{id}/revisions | 预报订正（写 forecast_order） | forecast:order |
 
 ### 2.6 告警（/alert-rules, /alerts）
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /alert-rules?stationId=&type=&status= | 规则分页 | 登录 |
-| POST / PUT / DELETE | /alert-rules | 规则维护（阈值、等级、渠道） | FORECASTER/ADMIN |
-| PATCH | /alert-rules/{id}/status | 启用/停用 | FORECASTER/ADMIN |
-| GET | /alerts?stationId=&level=&type=&startTime=&endTime=&status= | 告警历史分页 | 登录 |
-| GET | /alerts/stat?startTime=&endTime= | 告警统计（按类型/等级/站点） | 登录 |
-| PATCH | /alerts/{id}/relieve | 手动解除告警 | FORECASTER |
+| GET | /alert-rules?stationId=&type=&status= | 规则分页 | alert:view |
+| POST / PUT / DELETE | /alert-rules | 规则维护（阈值、等级、渠道） | alert:manage |
+| PATCH | /alert-rules/{id}/status | 启用/停用 | alert:manage |
+| GET | /alerts?stationId=&level=&type=&startTime=&endTime=&status= | 告警历史分页 | alert:view |
+| GET | /alerts/stat?startTime=&endTime= | 告警统计（按类型/等级/站点） | alert:view |
+| PATCH | /alerts/{id}/relieve | 手动解除告警 | alert:manage |
 | GET | /alert-subscribes | 我的告警订阅 | 登录 |
 | POST / DELETE | /alert-subscribes | 订阅/取消订阅（站点+类型+渠道） | 登录 |
 
@@ -164,9 +188,9 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /qc-tasks?stationId=&status=&startTime=&endTime= | 审核任务分页 | OPERATOR |
-| PATCH | /qc-tasks/{id}/review | 审核：`{"action":"confirm/revise/void","revisedValue":12.5}` | OPERATOR |
-| POST | /qc-tasks/interpolate | 手动触发一轮缺测插补（FR-QC-05），返回本轮回填统计 | OPERATOR |
+| GET | /qc-tasks?stationId=&status=&startTime=&endTime= | 审核任务分页 | qc:review |
+| PATCH | /qc-tasks/{id}/review | 审核：`{"action":"confirm/revise/void","revisedValue":12.5}` | qc:review |
+| POST | /qc-tasks/interpolate | 手动触发一轮缺测插补（FR-QC-05），返回本轮回填统计 | qc:review |
 
 ### 2.8 气象服务与报表（/articles, /reports）
 
@@ -174,18 +198,21 @@
 |---|---|---|---|
 | GET | /articles?category=&page= | 服务内容分页（已发布） | 公开 |
 | GET | /articles/{id} | 详情 | 公开 |
-| POST / PUT / PATCH /articles | 管理端：新增/修改/上下架 | ADMIN |
+| POST / PUT / PATCH /articles | 管理端：新增/修改/上下架 | article:manage |
 | GET | /reports?stationId=&type=&period= | 报表文件分页 | 登录 |
-| POST | /reports/generate | 手动生成报表 | FORECASTER/ADMIN |
+| POST | /reports/generate | 手动生成报表 | report:generate |
 | GET | /reports/{id}/download | 下载报表文件 | 登录 |
 
-### 2.9 系统管理（/sys）
+### 2.9 系统管理与角色（/sys, /roles）
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET / PUT | /sys/configs | 系统参数查询/修改（分页+按 key 搜索） | ADMIN |
-| GET | /sys/logs/operations?userId=&module=&startTime=&endTime= | 操作日志分页 | ADMIN |
-| GET | /roles, POST /roles, PUT /roles/{id} | 角色与权限分配 | ADMIN |
+| GET | /sys/configs | 系统参数查询（分页+按 key 搜索） | sys:manage |
+| PUT | /sys/configs/{id} | 修改系统参数 | sys:manage |
+| GET | /sys/logs/operations?userId=&module=&startTime=&endTime= | 操作日志分页 | sys:manage |
+| GET | /roles | 角色列表（含权限编码） | sys:manage |
+| GET | /roles/permissions | 权限清单（供角色权限配置选择） | sys:manage |
+| POST / PUT | /roles | 角色新增 / 权限全量重设 | sys:manage |
 
 ---
 
