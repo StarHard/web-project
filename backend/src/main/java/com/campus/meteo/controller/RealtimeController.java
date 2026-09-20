@@ -4,6 +4,8 @@ import com.campus.meteo.influx.ObsData;
 import com.campus.meteo.influx.ObsReader;
 import com.campus.meteo.common.result.Result;
 import com.campus.meteo.agent.collector.CollectorAgent;
+import com.campus.meteo.dto.RealtimeCompareResp;
+import com.campus.meteo.service.RealtimeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class RealtimeController {
 
     private final StringRedisTemplate redisTemplate;
     private final ObsReader obsReader;
+    private final RealtimeService realtimeService;
 
     @Operation(summary = "站点最新观测数据")
     @GetMapping("/latest")
@@ -60,5 +63,20 @@ public class RealtimeController {
         hours = Math.min(Math.max(hours, 1), 168);
         Instant start = Instant.now().minusSeconds((long) hours * 3600);
         return Result.ok(obsReader.queryRangeAggregated(stationCode, start, Instant.now(), granularity));
+    }
+
+    /**
+     * 多站点同要素对比（FR-RT-04）
+     *
+     * 该接口不在 PUBLIC_GET 白名单内，需登录后访问（与接口规范 2.3 一致）。
+     */
+    @Operation(summary = "多站点同要素对比", description = "时间轴由服务端取并集，各站点序列按此对齐，缺测为 null")
+    @GetMapping("/compare")
+    public Result<RealtimeCompareResp> compare(@RequestParam String stationIds,
+                                               @RequestParam String element,
+                                               @RequestParam(required = false) String startTime,
+                                               @RequestParam(required = false) String endTime,
+                                               @RequestParam(defaultValue = "auto") String granularity) {
+        return Result.ok(realtimeService.compare(stationIds, element, startTime, endTime, granularity));
     }
 }

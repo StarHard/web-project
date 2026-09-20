@@ -130,3 +130,45 @@ export interface ObsPoint {
 export function realtimeCurve(stationCode: string, hours = 24, granularity = 'auto') {
   return request<ObsPoint[]>({ url: '/realtime/curve', params: { stationCode, hours, granularity } })
 }
+
+export interface CompareStationSeries {
+  stationId: number
+  stationCode: string
+  stationName: string
+  /** 与 times 等长，缺测位置为 null */
+  values: (number | null)[]
+  latest: number | null
+  min: number | null
+  max: number | null
+  avg: number | null
+  count: number
+}
+
+export interface CompareResp {
+  element: string
+  granularity: string
+  startTime: string
+  endTime: string
+  /** 统一时间轴，各站点序列按此对齐 */
+  times: string[]
+  series: CompareStationSeries[]
+}
+
+/**
+ * 多站点同要素对比（FR-RT-04）
+ *
+ * 时间轴由服务端取并集并对齐（缺测为 null），前端按数组下标直接绘图。
+ * 单次最多 6 个站点，时间跨度上限 7 天，超出会被后端拒绝或截断。
+ */
+export function realtimeCompare(
+  stationIds: number[],
+  element: string,
+  startTime: string,
+  endTime: string,
+  granularity = 'auto'
+) {
+  return request<CompareResp>({
+    url: '/realtime/compare',
+    params: { stationIds: stationIds.join(','), element, startTime, endTime, granularity }
+  })
+}

@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '实时监测' }
       },
       {
+        path: 'compare',
+        name: 'compare',
+        component: () => import('@/views/CompareView.vue'),
+        meta: { title: '多站对比' }
+      },
+      {
         path: 'map',
         name: 'map',
         component: () => import('@/views/MapView.vue'),

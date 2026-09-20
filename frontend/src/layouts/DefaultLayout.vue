@@ -27,6 +27,7 @@ const MENU: MenuGroup[] = [
     label: '监测中心',
     items: [
       { title: '实时监测', icon: 'dashboard', to: '/dashboard' },
+      { title: '多站对比', icon: 'compare', to: '/compare' },
       { title: '大屏看板', icon: 'screen', to: '/screen' },
       { title: '站点地图', icon: 'map', to: '/map' },
       { title: '历史数据', icon: 'history', to: '/history' }
