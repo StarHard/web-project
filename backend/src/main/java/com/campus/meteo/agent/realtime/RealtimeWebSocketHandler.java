@@ -17,7 +17,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 实时数据 WebSocket 处理器：
  * - 客户端连接后可发送 {"action":"subscribe","stationCode":"C001"} 订阅站点
- * - 采集Agent每处理一条数据即推送 {"type":"latest", ...}
+ * - 质控Agent判定通过后推送 {"type":"latest", ...}
+ *
+ * 推送内容为**质控后**数据：早先在采集侧推送，qc_flag 还是 raw，会把随后被质控判为可疑的
+ * 尖峰值直接推给订阅者，口径比 /realtime/curve（会剔除 raw/suspect）更脏。
  */
 @Slf4j
 @Component
@@ -54,7 +57,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         log.info("WebSocket 连接关闭: {}", session.getId());
     }
 
-    /** 采集链路调用：向订阅了该站点的连接推送最新数据 */
+    /** 质控链路调用：向订阅了该站点的连接推送质控后的最新数据 */
     public void push(ObsData obs) {
         String payload;
         try {
@@ -62,6 +65,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     "type", "latest",
                     "stationCode", obs.getStationCode(),
                     "ts", obs.getTs().toString(),
+                    "qcFlag", obs.getQcFlag(),
                     "elements", obs.getElements()));
         } catch (Exception e) {
             return;

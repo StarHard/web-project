@@ -49,8 +49,6 @@ class CollectorAgentHealthCheckTest {
     private StationMapper stationMapper;
     @Mock
     private StringRedisTemplate redisTemplate;
-    @Mock
-    private com.campus.meteo.agent.realtime.RealtimeWebSocketHandler realtimeWebSocketHandler;
 
     private MqttProperties properties;
     private CollectorAgent agent;
@@ -63,7 +61,7 @@ class CollectorAgentHealthCheckTest {
         properties.setStaleThresholdMs(600_000);
         properties.setManualReconnectAfterMs(300_000);
         agent = new CollectorAgent(properties, obsWriter, mqProducer, stationMapper,
-                redisTemplate, new ObjectMapper(), realtimeWebSocketHandler);
+                redisTemplate, new ObjectMapper());
         ReflectionTestUtils.setField(agent, "mqttClient", mqttClient);
     }
 

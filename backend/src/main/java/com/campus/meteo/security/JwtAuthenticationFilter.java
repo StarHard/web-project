@@ -30,6 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final TokenStore tokenStore;
     private final CustomUserDetailsService userDetailsService;
 
+    /** WebSocket 握手路径前缀（不含 context-path） */
+    private static final String WS_PATH_PREFIX = "/ws/";
+
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
@@ -55,6 +58,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String bearer = request.getHeader("Authorization");
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
+        }
+        // WebSocket 握手：浏览器的 WebSocket API 无法自定义请求头，只能通过查询参数携带 Token。
+        // 仅对 /ws/** 开放这条通道——Token 出现在 URL 中会落入访问日志与浏览器历史，
+        // 不应扩散到普通 REST 接口。
+        if (request.getServletPath().startsWith(WS_PATH_PREFIX)) {
+            String param = request.getParameter("token");
+            if (StringUtils.hasText(param)) {
+                return param;
+            }
         }
         return null;
     }

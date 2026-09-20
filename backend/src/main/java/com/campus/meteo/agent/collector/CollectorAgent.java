@@ -54,7 +54,6 @@ public class CollectorAgent {
     private final StationMapper stationMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final com.campus.meteo.agent.realtime.RealtimeWebSocketHandler realtimeWebSocketHandler;
 
     private MqttClient mqttClient;
 
@@ -207,8 +206,6 @@ public class CollectorAgent {
             // 4. 分发到质控链路
             mqProducer.send(MqTopics.METEO_RAW, obs);
 
-            // 5. WebSocket 实时推送
-            realtimeWebSocketHandler.push(obs);
             log.info("采集完成: station={}, msgId={}", stationCode, msgId);
         } catch (Exception e) {
             log.error("报文处理失败: topic={}, msgId={}, payload={}, err={}",

@@ -35,11 +35,10 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final ObjectMapper objectMapper;
 
-    /** 无条件白名单：登录/刷新、推送、文档、健康检查 */
+    /** 无条件白名单：登录/刷新、接口文档、健康检查 */
     private static final String[] WHITELIST = {
             "/auth/login",
             "/auth/refresh",
-            "/ws/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
@@ -49,15 +48,19 @@ public class SecurityConfig {
     /**
      * 仅 GET 公开的只读接口。
      * 必须限定方法：否则 POST /articles、POST /forecasts/generate 等写接口会被一并放行造成越权。
+     *
+     * /ws/realtime 也在此列：WebSocket 握手就是一次 GET 请求，故用方法限定即可精确放行，
+     * 无需把整个 /ws/** 无条件放开——/ws/alert 推的是告警事件（REST 侧 /alerts 需 alert:view），
+     * 必须要求登录。
      */
     private static final String[] PUBLIC_GET = {
             "/realtime/latest",
-            "/realtime/latest/batch",
             "/realtime/curve",
             "/stations/map",
             "/forecasts",
             "/articles",
-            "/articles/**"
+            "/articles/**",
+            "/ws/realtime"
     };
 
     @Bean
