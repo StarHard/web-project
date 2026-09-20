@@ -66,6 +66,16 @@
 - GET 查询 / POST 新增 / PUT 全量修改 / PATCH 状态或局部修改 / DELETE 删除（逻辑删除）。
 - 操作类非 CRUD 动作用动词子路径：`POST /api/v1/stations/{id}/online-check`。
 
+### 1.6 站点标识约定
+
+| 场景 | 参数名 | 类型 | 取值 |
+|---|---|---|---|
+| 时序数据接口（`/realtime/**`、`/forecasts/**`） | `stationCode` | String | 站点编码，如 `CAMPUS01`（InfluxDB 以 `station_code` 作为 tag） |
+| 业务库资源接口（`/stations`、`/devices`、`/alerts`、`/qc-tasks`、`/reports`、`/history`、`/stats`、`/export`） | `stationId` | Long | 站点主键 ID |
+| 多站点批量入参（如 `/realtime/compare`） | `stationIds` | String | 站点 ID 逗号分隔，如 `1,2` |
+
+> 时序库以站点编码为 tag，直接按编码查询可省去一次业务库查档；业务库资源以主键关联，故按 ID 传参。新增接口须遵循本约定，不得混用。
+
 ---
 
 ## 2. 接口清单（按模块）
@@ -100,12 +110,15 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /realtime/latest?stationId= | 站点最新一条全要素数据（Redis 缓存） | 公开 |
-| GET | /realtime/latest/batch | 多站点最新数据（`stationIds=a,b,c`） | 公开 |
-| GET | /realtime/curve?stationId=&element=&hours=24 | 最近 N 小时要素曲线 | 公开 |
-| GET | /realtime/compare?stationIds=&element=&startTime=&endTime= | 多站点同要素对比 | 登录 |
-| WS | /ws/realtime | WebSocket 订阅推送：`{"type":"latest","stationId":1,...}` | 登录 |
-| WS | /ws/alert | WebSocket 告警推送 | 登录 |
+| GET | /realtime/latest?stationCode= | 站点最新一条全要素数据（Redis 缓存，无缓存时降级查 InfluxDB） | 公开 |
+| GET | /realtime/curve?stationCode=&hours=24&granularity=auto | 最近 N 小时要素曲线（hours 上限 168；granularity 取 raw/5m/15m/1h/1d/auto） | 公开 |
+| GET | /realtime/compare?stationIds=&element=&startTime=&endTime=&granularity=auto | 多站点同要素对比（时间轴取并集对齐，缺测为 null；单次最多 6 站，跨度上限 7 天） | 登录 |
+| WS | /ws/realtime | 实时数据推送，仅推**质控通过**的数据（与 `/realtime/curve` 同口径）。订阅：`{"action":"subscribe","stationCode":"CAMPUS01"}`（`"*"` 订阅全部）；推送：`{"type":"latest","stationCode":"CAMPUS01","ts":"…","qcFlag":"passed","elements":{…}}` | 公开 |
+| WS | /ws/alert | 告警事件全量广播：`{"type":"alert","stationCode":…,"level":…,"content":…,"alertTime":…}` | 登录 |
+
+> WebSocket 鉴权：浏览器 WebSocket API 无法自定义请求头，需登录的通道通过握手地址携带 Token——`ws://<host>/api/v1/ws/alert?token=<accessToken>`。查询参数通道仅对 `/ws/**` 开放，普通 REST 接口仍只认 `Authorization` 头。
+
+> `/realtime/latest/batch`（多站点最新数据）为早期设计条目，当前未实现，故未列入上表；批量取数请使用 `/realtime/compare`。
 
 ### 2.4 历史数据查询与统计（/history, /stats）
 
@@ -125,11 +138,14 @@
 
 | 方法 | 路径 | 说明 | 权限 |
 |---|---|---|---|
-| GET | /forecasts?stationId=&range=72h | 0–72h 逐小时预报产品 | 公开 |
-| GET | /forecasts/model-compare?stationId=&element= | 多模型预报对比曲线 | FORECASTER |
-| GET | /forecasts/verification?stationId=&startTime=&endTime= | 预报检验评分（MAE/RMSE/TS） | FORECASTER |
+| GET | /forecasts?stationCode=&model=stat&range=72 | 0–72h 逐小时预报产品（model 取 stat/ml/manual，range 上限 72） | 公开 |
+| GET | /forecasts/model-compare?stationCode=&element=temp&range=72 | 多模型预报对比曲线 | USER+ |
+| GET | /forecasts/verification?stationCode=&model=stat&days=7 | 预报检验评分（MAE/RMSE/TS，days 上限 30） | USER+ |
+| POST | /forecasts/backtest?stationCode=&days=3 | 预报回算：重演历史预报以产出检验样本（省略 stationCode 则全部启用站点，days 上限 7） | USER+ |
+| POST | /forecasts/generate?stationCode= | 手动触发预报 Agent（省略 stationCode 则全部启用站点） | USER+ |
 | POST | /forecasts/{id}/revisions | 预报订正（写 forecast_order） | FORECASTER |
-| POST | /forecasts/generate?stationId= | 手动触发预报 Agent | FORECASTER |
+
+> 权限列口径：`USER+` 对应权限点 `forecast:view`（USER / FORECASTER / ADMIN 均持有），`FORECASTER` 对应 `forecast:order`（仅 FORECASTER / ADMIN）。角色与权限点的授予关系见 `V1__init.sql`。
 
 ### 2.6 告警（/alert-rules, /alerts）
 
