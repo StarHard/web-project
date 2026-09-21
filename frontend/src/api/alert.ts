@@ -22,7 +22,10 @@ export interface AlertRecord {
   level: number
   alertTime: string
   obsValue: number
+  /** 规则判定的事实描述 */
   content: string
+  /** AI 生成的处置建议，大模型不可用时为空 */
+  aiContent?: string | null
   status: number
   relieveTime?: string
 }

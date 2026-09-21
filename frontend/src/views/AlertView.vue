@@ -39,6 +39,8 @@ const statData = ref<{ total: number; byLevel: Record<string, number>; byStatus:
 
 const subscribes = ref<AlertSubscribe[]>([])
 const showSubscribe = ref(false)
+/** 告警详情弹窗：表格单元格放不下完整文案，这里给出事实描述与 AI 建议全文 */
+const detail = ref<AlertRecord | null>(null)
 const subscribeForm = ref<{ stationId: number; alertType: number; channels: string[] }>({
   stationId: 0,
   alertType: 0,
@@ -253,8 +255,12 @@ onMounted(async () => {
               </span>
             </td>
             <td>{{ item.obsValue }}</td>
-            <td :title="item.content" style="max-width: 320px; overflow: hidden; text-overflow: ellipsis">
-              {{ item.content }}
+            <td style="max-width: 360px">
+              <div class="alert-fact" :title="item.content">{{ item.content }}</div>
+              <div v-if="item.aiContent" class="alert-ai">
+                <span class="ai-tag">AI</span>
+                <span class="ai-text" :title="item.aiContent">{{ item.aiContent }}</span>
+              </div>
             </td>
             <td>{{ formatTime(item.alertTime, true) }}</td>
             <td>
@@ -263,8 +269,12 @@ onMounted(async () => {
               </span>
             </td>
             <td>
-              <button v-if="item.status === 0" class="btn btn-sm" @click="handleRelieve(item.id)">解除</button>
-              <span v-else style="color: var(--text-muted)">--</span>
+              <div class="row" style="gap: 6px; flex-wrap: nowrap">
+                <button class="btn btn-sm" @click="detail = item">详情</button>
+                <button v-if="item.status === 0" class="btn btn-sm" @click="handleRelieve(item.id)">
+                  解除
+                </button>
+              </div>
             </td>
           </tr>
           <tr v-if="records.length === 0">
@@ -281,6 +291,58 @@ onMounted(async () => {
       @update:pageNum="loadRecords"
       @update:pageSize="resetAndSearch"
     />
+
+    <div v-if="detail" class="modal-mask" @click.self="detail = null">
+      <div class="modal">
+        <h3 class="modal-title">告警详情</h3>
+
+        <div class="detail-meta">
+          <div>
+            <span class="field-label">站点</span>
+            <div>{{ stationName(detail.stationId) }}</div>
+          </div>
+          <div>
+            <span class="field-label">等级</span>
+            <div :style="{ color: ALERT_LEVEL_COLORS[detail.level] }">
+              {{ ALERT_LEVEL_LABELS[detail.level] }}
+            </div>
+          </div>
+          <div>
+            <span class="field-label">触发值</span>
+            <div>{{ detail.obsValue }}</div>
+          </div>
+          <div>
+            <span class="field-label">告警时间</span>
+            <div>{{ formatTime(detail.alertTime, true) }}</div>
+          </div>
+          <div>
+            <span class="field-label">状态</span>
+            <div>{{ detail.status === 0 ? '进行中' : detail.status === 1 ? '已解除' : '已升级' }}</div>
+          </div>
+          <div v-if="detail.relieveTime">
+            <span class="field-label">解除时间</span>
+            <div>{{ formatTime(detail.relieveTime, true) }}</div>
+          </div>
+        </div>
+
+        <div class="field detail-block">
+          <span class="field-label">告警内容（规则判定）</span>
+          <p class="detail-text">{{ detail.content }}</p>
+        </div>
+
+        <div class="field detail-block">
+          <span class="field-label">AI 处置建议</span>
+          <p v-if="detail.aiContent" class="detail-text">{{ detail.aiContent }}</p>
+          <p v-else class="detail-text detail-empty">
+            本条告警没有 AI 建议：可能生成时大模型不可用，或该告警产生于启用本功能之前。
+          </p>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" @click="detail = null">关闭</button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="showSubscribe" class="modal-mask" @click.self="showSubscribe = false">
       <div class="modal">
@@ -358,5 +420,67 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 14px;
   align-items: end;
+}
+
+/* 事实描述单行省略，AI 建议放宽到两行：单元格里能多读到一些，完整文案走详情弹窗 */
+.alert-fact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-ai {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ai-tag {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  background: rgba(74, 126, 168, 0.18);
+  border: 1px solid rgba(74, 126, 168, 0.35);
+  color: var(--accent);
+}
+
+.ai-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+/* ===== 告警详情弹窗 ===== */
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.detail-block {
+  margin-top: 16px;
+}
+
+.detail-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.detail-empty {
+  color: var(--text-dim);
 }
 </style>
