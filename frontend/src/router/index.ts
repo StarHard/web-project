@@ -30,6 +30,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '多站对比' }
       },
       {
+        path: 'assistant',
+        name: 'assistant',
+        component: () => import('@/views/AssistantView.vue'),
+        meta: { title: '智能助手' }
+      },
+      {
         path: 'map',
         name: 'map',
         component: () => import('@/views/MapView.vue'),

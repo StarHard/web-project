@@ -24,6 +24,10 @@ const collapsed = ref(false)
 
 const MENU: MenuGroup[] = [
   {
+    label: '智能决策',
+    items: [{ title: '智能助手', icon: 'assistant', to: '/assistant' }]
+  },
+  {
     label: '监测中心',
     items: [
       { title: '实时监测', icon: 'dashboard', to: '/dashboard' },
