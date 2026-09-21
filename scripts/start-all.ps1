@@ -47,6 +47,8 @@ $Backend = Join-Path $Root "backend"
 $AppLog  = Join-Path $Tools "app.log"
 $AppErr  = Join-Path $Tools "app.err.log"
 $TokenFile = Join-Path $Tools "influx-token.txt"
+# 大模型密钥文件（tools/ 已 gitignore，不入库）：内容为一行 DeepSeek API Key
+$LlmKeyFile = Join-Path $Tools "llm-key.txt"
 
 $InfluxUser = "admin"
 $InfluxPassword = "MeteoAdmin@2026"
@@ -256,6 +258,17 @@ if (Test-Port 8080) {
     $env:INFLUX_TOKEN = $InfluxToken
     $env:RABBITMQ_USER = "guest"
     $env:RABBITMQ_PASSWORD = "guest"
+
+    # 大模型密钥：优先用环境变量 LLM_API_KEY，其次读 tools\llm-key.txt
+    # 两者都没有时不阻断启动——助手接口会降级为 source=unavailable 的提示，其它功能不受影响
+    if (-not $env:LLM_API_KEY -and (Test-Path $LlmKeyFile)) {
+        $env:LLM_API_KEY = (Get-Content $LlmKeyFile -Raw).Trim()
+        Write-Host "  大模型密钥：已从 $LlmKeyFile 载入"
+    } elseif ($env:LLM_API_KEY) {
+        Write-Host "  大模型密钥：使用环境变量 LLM_API_KEY"
+    } else {
+        Write-Host "  大模型密钥：未配置，智能助手将降级为提示信息" -ForegroundColor Yellow
+    }
 
     Write-Host "  正在启动 Spring Boot（首次运行需下载 Maven 与项目依赖，可能耗时数分钟）..."
     Start-Process -FilePath (Join-Path $Backend "mvnw.cmd") -ArgumentList "spring-boot:run" `
