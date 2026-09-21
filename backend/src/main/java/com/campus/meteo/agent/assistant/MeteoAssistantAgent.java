@@ -24,14 +24,16 @@ public class MeteoAssistantAgent {
                     + "可先通过「实时监测」「历史数据」「精细预报」「灾害告警」页面获取数据。";
 
     private final ChatClient meteoChatClient;
+    private final ToolCallRecorder toolCallRecorder;
 
     @Value("${spring.ai.openai.chat.options.model:unknown}")
     private String model;
 
-    /** 单轮问答（会话记忆与工具调用在后续迭代接入） */
+    /** 单轮问答（会话记忆在后续迭代接入；工具调用由 ChatClient 默认注册的 MeteoTools 提供） */
     public AssistantResp ask(String question) {
         AssistantResp resp = new AssistantResp();
         resp.setModel(model);
+        toolCallRecorder.begin();
         try {
             String answer = meteoChatClient.prompt()
                     .user(question)
@@ -45,6 +47,9 @@ public class MeteoAssistantAgent {
             log.warn("大模型调用失败，降级返回: model={}, err={}", model, e.getMessage());
             resp.setSource("unavailable");
             resp.setAnswer(UNAVAILABLE_ANSWER);
+        } finally {
+            // 无论成功失败都要取走留痕，否则线程复用会把本轮记录带到下一次问答
+            resp.setTools(toolCallRecorder.drain());
         }
         return resp;
     }

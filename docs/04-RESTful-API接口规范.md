@@ -221,7 +221,22 @@
 | POST | /assistant/chat | 气象决策助手对话：`{"question":"昨天哪个站点风速最大？"}`，由大模型规划并调用气象数据工具后作答；大模型不可用时返回 `source=unavailable` 的提示而非报错 | 登录 |
 
 > 大模型经 OpenAI 兼容协议接入（默认 DeepSeek，见 `spring.ai.openai.*`，密钥走环境变量 `LLM_API_KEY`）。
-> 返回结构：`{answer, source: llm|unavailable, model}`。
+> 返回结构：`{answer, source: llm|unavailable, model, tools[]}`，其中 `tools` 为本轮实际调用的工具留痕
+> （`{name, arguments, result}`，按调用顺序），供前端展示「AI 查了什么、拿到了什么」；大模型不可用时为空数组。
+> 模型不直接访问数据库，只读数据一律经 `agent/assistant/MeteoTools` 暴露的工具获取（工具内部委托既有 Service，
+> 不新增数据访问逻辑）：
+
+| 工具 | 能力 | 底层服务 |
+|---|---|---|
+| `listStations` | 站点编码、名称、在线状态、当前最高告警等级 | StationService |
+| `queryRealtime` | 站点最新质控后观测（含质控标记） | RealtimeService |
+| `queryHistory` | 历史观测统计摘要（样本数/均值/极值/最新），支持中文要素名，跨度上限 7 天 | DataQueryService |
+| `queryAlerts` | 最近告警记录（等级/站点/触发值/状态），回溯上限 168 小时 | AlertService |
+| `queryForecast` | 未来 1–72 小时多模型预报曲线的时次范围与极值 | ForecastService |
+| `getStationInfo` | 站点档案详情（区划/经纬度/海拔/类型/状态） | StationService |
+
+> 工具均为**只读**；工具内部异常与「无数据」都转为明确的中文提示返回给模型，
+> 避免模型因拿不到数据而改用常识值编造气象数值。
 
 ---
 
