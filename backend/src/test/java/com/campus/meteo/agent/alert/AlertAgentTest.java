@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -68,19 +69,24 @@ class AlertAgentTest {
     private ValueOperations<String, String> valueOperations;
     @Mock
     private Channel channel;
+    @Mock
+    private AlertTextGenerator alertTextGenerator;
 
     private AlertAgent alertAgent;
 
     @BeforeEach
     void setUp() {
         alertAgent = new AlertAgent(contextCache, alertRecordMapper, alertNotifyMapper, obsReader,
-                sysConfigService, alertWebSocketHandler, redisTemplate);
+                sysConfigService, alertWebSocketHandler, redisTemplate, alertTextGenerator);
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         lenient().when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
                 .thenReturn(true);
         lenient().when(sysConfigService.getInt(eq("alert.suppress.minutes"), anyInt()))
                 .thenReturn(SUPPRESS_MINUTES);
         lenient().when(contextCache.getStationCode(anyLong())).thenReturn(STATION);
+        lenient().when(contextCache.getStationName(anyLong())).thenReturn("主校区站");
+        lenient().when(alertTextGenerator.generate(anyString(), any(), any(), anyInt(), anyDouble(), any()))
+                .thenReturn("建议暂停户外高空作业。");
     }
 
     @Test
@@ -97,7 +103,25 @@ class AlertAgentTest {
         assertThat(saved.getStatus()).isZero();
         assertThat(saved.getObsValue()).isEqualByComparingTo("35.0");
         assertThat(saved.getContent()).contains("暴雨蓝色预警");
+        assertThat(saved.getAiContent()).isEqualTo("建议暂停户外高空作业。");
         verify(alertNotifyMapper).insert(any(AlertNotify.class));
+        verify(alertWebSocketHandler).broadcast(eq(STATION), eq(1), anyString(), anyString());
+        verify(channel).basicAck(DELIVERY_TAG, false);
+    }
+
+    @Test
+    @DisplayName("大模型不可用 → 只缺 AI 建议，告警记录仍以模板文案落库")
+    void shouldStillPersistAlertWhenAiTextUnavailable() throws Exception {
+        stubSingleRule(rule(1L, "temp", 1, 30.0, 1, null, "web"));
+        when(alertRecordMapper.selectOne(any())).thenReturn(null);
+        when(alertTextGenerator.generate(anyString(), any(), any(), anyInt(), anyDouble(), any()))
+                .thenReturn(null);
+
+        alertAgent.onQcData(obs(Map.of("temp", 35.0)), channel, DELIVERY_TAG);
+
+        AlertRecord saved = captureInsertedAlert();
+        assertThat(saved.getContent()).contains("暴雨蓝色预警");
+        assertThat(saved.getAiContent()).isNull();
         verify(alertWebSocketHandler).broadcast(eq(STATION), eq(1), anyString(), anyString());
         verify(channel).basicAck(DELIVERY_TAG, false);
     }

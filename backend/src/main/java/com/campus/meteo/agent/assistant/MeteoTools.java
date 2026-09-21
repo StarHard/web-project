@@ -1,5 +1,6 @@
 package com.campus.meteo.agent.assistant;
 
+import com.campus.meteo.common.constant.MeteoElement;
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
 import com.campus.meteo.common.result.PageResult;
@@ -67,10 +68,7 @@ public class MeteoTools {
             Map.entry("蒸发", "evap"));
 
     /** 要素展示名（含单位） */
-    private static final Map<String, String> ELEMENT_LABEL = Map.of(
-            "temp", "气温(℃)", "humi", "相对湿度(%)", "pres", "气压(hPa)",
-            "wind_speed", "风速(m/s)", "wind_dir", "风向(°)", "rain", "雨强(mm/h)",
-            "rad", "辐射(W/m²)", "vis", "能见度(km)", "evap", "蒸发(mm)");
+    private static final Map<String, String> ELEMENT_LABEL = MeteoElement.LABELS;
 
     private static final Map<Integer, String> ALERT_LEVEL_LABEL =
             Map.of(1, "蓝色", 2, "黄色", 3, "橙色", 4, "红色");

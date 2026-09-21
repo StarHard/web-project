@@ -18,6 +18,7 @@ import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -55,6 +56,7 @@ public class AlertAgent {
     private final SysConfigService sysConfigService;
     private final AlertWebSocketHandler alertWebSocketHandler;
     private final StringRedisTemplate redisTemplate;
+    private final AlertTextGenerator alertTextGenerator;
 
     @RabbitListener(queues = RabbitConfig.QUEUE_METEO_QC_ALERT)
     public void onQcData(ObsData obs, Channel channel,
@@ -175,6 +177,11 @@ public class AlertAgent {
         record.setAlertTime(alertTime);
         record.setObsValue(BigDecimal.valueOf(value));
         record.setContent(content);
+        // 在上面的事实描述之外补一段 AI 处置建议。同步生成而非异步：预警要即时送达，
+        // 异步会让「推送出去的文案」与「记录里的文案」长期不一致；单次调用实测约 1 秒，
+        // 且生成失败返回 null 只回退模板文案，不会拖垮或丢失告警本身。
+        record.setAiContent(alertTextGenerator.generate(
+                stationName(stationId, stationCode), rule, obs, level, value, fromLevel));
         record.setStatus(0);
         alertRecordMapper.insert(record);
 
@@ -202,6 +209,12 @@ public class AlertAgent {
         alertWebSocketHandler.broadcast(stationCode, level, content, alertTime.format(TIME_FMT));
         log.info("告警触发: station={}, rule={}, level={}, msgId={}",
                 stationCode, rule.getId(), level, obs.getMsgId());
+    }
+
+    /** 站点名称缺失（缓存未命中）时退回编码，保证提示词里始终有可识别的站点标识 */
+    private String stationName(Long stationId, String stationCode) {
+        String name = contextCache.getStationName(stationId);
+        return StringUtils.hasText(name) ? name : stationCode;
     }
 
     /** 自动解除：本周期未触发且超出抑制窗口的进行中告警 */

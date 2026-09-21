@@ -26,6 +26,7 @@ public class AlertContextCache {
 
     private volatile List<AlertRule> enabledRules = List.of();
     private volatile Map<Long, String> stationCodeById = Map.of();
+    private volatile Map<Long, String> stationNameById = Map.of();
     private volatile Map<String, Long> stationIdByCode = Map.of();
     private volatile long cacheAt;
 
@@ -47,6 +48,12 @@ public class AlertContextCache {
         return stationCodeById.get(stationId);
     }
 
+    /** 站点ID → 站点名称（预警文案面向值班人员，用名称而非编码更易识别） */
+    public String getStationName(Long stationId) {
+        ensureCache();
+        return stationNameById.get(stationId);
+    }
+
     private synchronized void ensureCache() {
         long now = System.currentTimeMillis();
         if (cacheAt > 0 && now - cacheAt < 30_000) {
@@ -57,6 +64,8 @@ public class AlertContextCache {
         List<Station> stations = stationMapper.selectList(new LambdaQueryWrapper<Station>());
         stationCodeById = stations.stream()
                 .collect(Collectors.toMap(Station::getId, Station::getStationCode, (a, b) -> a));
+        stationNameById = stations.stream()
+                .collect(Collectors.toMap(Station::getId, Station::getName, (a, b) -> a));
         stationIdByCode = stations.stream()
                 .collect(Collectors.toMap(Station::getStationCode, Station::getId, (a, b) -> a));
         cacheAt = now;
