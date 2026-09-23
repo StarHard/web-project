@@ -2,6 +2,7 @@ package com.campus.meteo.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.campus.meteo.agent.assistant.knowledge.KnowledgeBaseChangedEvent;
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
 import com.campus.meteo.common.result.PageResult;
@@ -11,6 +12,7 @@ import com.campus.meteo.mapper.ServiceArticleMapper;
 import com.campus.meteo.service.ArticleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,7 @@ import java.time.LocalDateTime;
 public class ArticleServiceImpl implements ArticleService {
 
     private final ServiceArticleMapper serviceArticleMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public PageResult<ServiceArticle> page(long pageNum, long pageSize, Integer category, Integer publishStatus) {
@@ -52,6 +55,7 @@ public class ArticleServiceImpl implements ArticleService {
         copy(req, article);
         article.setPublishStatus(0);
         serviceArticleMapper.insert(article);
+        publishChanged(article.getId());
     }
 
     @Override
@@ -63,6 +67,7 @@ public class ArticleServiceImpl implements ArticleService {
         copy(req, article);
         article.setId(id);
         serviceArticleMapper.updateById(article);
+        publishChanged(id);
     }
 
     @Override
@@ -80,6 +85,17 @@ public class ArticleServiceImpl implements ArticleService {
             update.setPublishTime(LocalDateTime.now());
         }
         serviceArticleMapper.updateById(update);
+        publishChanged(id);
+    }
+
+    /**
+     * 通知知识库重建索引
+     *
+     * 内容变更会影响助手可引用的语料：新发布的文章应能被检索到，下架的必须消失。
+     * 用事件解耦——内容模块不感知知识库实现，重建也在监听方异步完成，不拖慢内容保存。
+     */
+    private void publishChanged(Long articleId) {
+        eventPublisher.publishEvent(new KnowledgeBaseChangedEvent(articleId));
     }
 
     private void copy(ArticleSaveReq req, ServiceArticle article) {

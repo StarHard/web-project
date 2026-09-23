@@ -12,6 +12,7 @@
 | 语言/JDK | Java 17 |
 | 后端框架 | Spring Boot 3.5 / Spring Security / MyBatis Plus 3.5 |
 | AI | Spring AI 1.1.8（OpenAI 兼容协议接入国产大模型，默认 DeepSeek；换厂商只改 base-url 与 model） |
+| 向量检索 | Spring AI VectorStore（进程内 SimpleVectorStore，语料为「气象服务」已发布文章；检索侧只依赖接口，可换 Redis/Milvus） |
 | 中间件 | RabbitMQ 3.12 / Redis 7 / EMQX 5 / Nginx 1.24 |
 | 数据 | MySQL 8 / InfluxDB 2.7 |
 | 前端 | Vue 3.4+ / Vite / Pinia / ECharts 5 / 高德地图 / DataV |

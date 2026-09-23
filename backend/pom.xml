@@ -161,6 +161,14 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
+        <!-- 决策智能体知识库（RAG）的内存向量存储。
+             选用 Spring AI 的 VectorStore 抽象而非自写余弦检索：知识库规模小（校园服务文章数十篇），
+             SimpleVectorStore 足够；日后换 Redis/Milvus 只需替换 VectorStore 实现，检索链路不动。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-vector-store</artifactId>
+        </dependency>
+
         <!-- 监控 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

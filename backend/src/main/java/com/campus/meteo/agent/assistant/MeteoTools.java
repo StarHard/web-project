@@ -1,5 +1,7 @@
 package com.campus.meteo.agent.assistant;
 
+import com.campus.meteo.agent.assistant.knowledge.KnowledgeBaseService;
+import com.campus.meteo.agent.assistant.knowledge.KnowledgeHit;
 import com.campus.meteo.common.constant.MeteoElement;
 import com.campus.meteo.common.exception.BizException;
 import com.campus.meteo.common.result.ErrorCode;
@@ -99,6 +101,7 @@ public class MeteoTools {
     private final ForecastService forecastService;
     private final StationService stationService;
     private final ToolCallRecorder recorder;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     @Tool(description = "查询系统内全部气象站点的编码、名称、在线状态与当前最高告警等级。"
             + "当用户未指定站点、或不确定站点编码时，先调用本工具确认。")
@@ -246,6 +249,33 @@ public class MeteoTools {
                             STATION_STATUS_LABEL.getOrDefault(station.getStatus(), "未知"),
                             onlineLabel(station.getOnlineFlag()),
                             station.getLastReportTime() == null ? "无记录" : TIME_FMT.format(station.getLastReportTime()));
+        });
+    }
+
+    @Tool(description = "检索校园气象知识库，语料为「气象服务」已发布文章（预警信号含义与发布标准、"
+            + "暴雨大风高温等灾害的防范指引、农业气象与出行建议、气象科普）。"
+            + "回答「某类预警信号是什么标准」「这种天气要注意什么」等规范与常识类问题时必须调用，"
+            + "回答时须注明依据的文章标题。")
+    public String searchKnowledge(
+            @ToolParam(description = "检索用的自然语言问题或关键词，如「大风黄色预警的发布标准」") String query) {
+        return guard("searchKnowledge", "问题 " + arg(query), () -> {
+            if (!StringUtils.hasText(query)) {
+                return "检索问题不能为空。请把用户的问题原样传入。";
+            }
+            if (!knowledgeBaseService.isReady()) {
+                return "知识库当前不可用（未配置向量化密钥或索引尚未建成），"
+                        + "请如实告知用户暂时无法提供规范依据，不要凭常识作答。";
+            }
+            List<KnowledgeHit> hits = knowledgeBaseService.search(query);
+            if (hits.isEmpty()) {
+                return "知识库中未检索到与该问题相关的内容。请如实说明没有找到依据，不要凭常识作答。";
+            }
+            String body = hits.stream()
+                    .map(hit -> "- 《%s》（%s，相关度 %.2f）：%s".formatted(
+                            hit.title(), hit.category(), hit.score(), hit.content()))
+                    .collect(Collectors.joining("\n"));
+            return "知识库检索到 %d 条相关内容：\n%s\n\n引用时请注明来源文章标题。"
+                    .formatted(hits.size(), body);
         });
     }
 

@@ -1,5 +1,7 @@
 package com.campus.meteo.agent.assistant;
 
+import com.campus.meteo.agent.assistant.knowledge.KnowledgeBaseService;
+import com.campus.meteo.agent.assistant.knowledge.KnowledgeHit;
 import com.campus.meteo.common.result.PageResult;
 import com.campus.meteo.dto.ForecastCompareResp;
 import com.campus.meteo.dto.ForecastPoint;
@@ -32,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +62,8 @@ class MeteoToolsTest {
     private StationService stationService;
     @Mock
     private ToolCallRecorder recorder;
+    @Mock
+    private KnowledgeBaseService knowledgeBaseService;
 
     @InjectMocks
     private MeteoTools tools;
@@ -71,6 +76,44 @@ class MeteoToolsTest {
         resp.setOnlineFlag(onlineFlag);
         resp.setAlertLevel(alertLevel);
         return resp;
+    }
+
+    @Test
+    @DisplayName("知识库检索：带回来源文章标题与相关度，供回答注明依据")
+    void shouldReturnKnowledgeHitsWithSource() {
+        when(knowledgeBaseService.isReady()).thenReturn(true);
+        when(knowledgeBaseService.search("大风黄色预警的发布标准")).thenReturn(List.of(
+                new KnowledgeHit("气象灾害预警信号等级与发布标准", "科普", "大风黄色为12小时内平均风力可达8级以上。", 0.81)));
+
+        String result = tools.searchKnowledge("大风黄色预警的发布标准");
+
+        assertThat(result)
+                .contains("《气象灾害预警信号等级与发布标准》")
+                .contains("相关度 0.81")
+                .contains("12小时内平均风力可达8级以上")
+                .contains("注明来源文章标题");
+    }
+
+    @Test
+    @DisplayName("知识库未就绪：明确说不可用，而不是让模型当成「没有这方面知识」")
+    void shouldTellKnowledgeBaseUnavailable() {
+        when(knowledgeBaseService.isReady()).thenReturn(false);
+
+        String result = tools.searchKnowledge("大风黄色预警的发布标准");
+
+        assertThat(result).contains("知识库当前不可用").contains("不要凭常识作答");
+        verify(knowledgeBaseService, never()).search(anyString());
+    }
+
+    @Test
+    @DisplayName("知识库无命中：如实说明未检索到依据")
+    void shouldTellNoKnowledgeHit() {
+        when(knowledgeBaseService.isReady()).thenReturn(true);
+        when(knowledgeBaseService.search(anyString())).thenReturn(List.of());
+
+        String result = tools.searchKnowledge("火星天气预报");
+
+        assertThat(result).contains("未检索到").contains("不要凭常识作答");
     }
 
     @Test

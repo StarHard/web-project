@@ -29,6 +29,18 @@ spring:
         options:
           model: ${LLM_MODEL:deepseek-chat}
           temperature: 0.3
+      # 知识库（RAG）向量化：DeepSeek 只提供 chat 接口，没有 embeddings（实测 /v1/embeddings 返回 404），
+      # 因此 embedding 单独指向阿里云百炼（通义千问）的 OpenAI 兼容端点。
+      # 两个坑：① base-url 不能带 /v1 —— Spring AI 会自动追加 embeddings-path（默认 /v1/embeddings），
+      #         带上 /v1 会拼成 /compatible-mode/v1/v1/embeddings 而 404；
+      #         ② model 必须带版本号（text-embedding-v3/v4），百炼的向量模型不带版本号调不通。
+      # 下面两项会覆盖上面的 chat 配置，两者互不影响；未配置密钥时知识库标记为未就绪，
+      # 检索工具会如实回答「未检索到依据」，而不是让模型凭常识作答。
+      embedding:
+        base-url: ${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+        api-key: ${EMBEDDING_API_KEY:changeme}
+        options:
+          model: ${EMBEDDING_MODEL:text-embedding-v4}
 
 # JWT 配置（密钥须通过环境变量注入，生产环境严禁写死）
 meteo:
@@ -36,6 +48,15 @@ meteo:
     secret: ${JWT_SECRET:changeme-change-me-in-production-env-at-least-32-bytes}
     access-token-expire-minutes: 120
     refresh-token-expire-days: 7
+  # 决策智能体知识库（RAG）：语料为「气象服务」已发布文章
+  rag:
+    enabled: ${RAG_ENABLED:true}
+    # 单次检索返回的片段数：过多会挤占上下文且引入噪声
+    top-k: ${RAG_TOP_K:4}
+    # 相似度下限：低于该值视为不相关，宁可不给依据也不给错依据
+    min-score: ${RAG_MIN_SCORE:0.35}
+    # 片段目标长度（字符）：合并短段落时的上限
+    max-chunk-chars: ${RAG_MAX_CHUNK_CHARS:400}
   influx:
     url: ${INFLUX_URL:http://localhost:8086}
     token: ${INFLUX_TOKEN:changeme}

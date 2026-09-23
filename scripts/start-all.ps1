@@ -49,6 +49,8 @@ $AppErr  = Join-Path $Tools "app.err.log"
 $TokenFile = Join-Path $Tools "influx-token.txt"
 # 大模型密钥文件（tools/ 已 gitignore，不入库）：内容为一行 DeepSeek API Key
 $LlmKeyFile = Join-Path $Tools "llm-key.txt"
+# 向量化密钥文件：知识库（RAG）的 embedding 单独一家厂商（DeepSeek 无 embeddings 接口）
+$EmbeddingKeyFile = Join-Path $Tools "embedding-key.txt"
 
 $InfluxUser = "admin"
 $InfluxPassword = "MeteoAdmin@2026"
@@ -268,6 +270,17 @@ if (Test-Port 8080) {
         Write-Host "  大模型密钥：使用环境变量 LLM_API_KEY"
     } else {
         Write-Host "  大模型密钥：未配置，智能助手将降级为提示信息" -ForegroundColor Yellow
+    }
+
+    # 向量化密钥：同样优先环境变量，其次读 tools\embedding-key.txt。
+    # 未配置时不阻断启动——知识库会标记为未就绪，检索工具如实回答「未检索到依据」
+    if (-not $env:EMBEDDING_API_KEY -and (Test-Path $EmbeddingKeyFile)) {
+        $env:EMBEDDING_API_KEY = (Get-Content $EmbeddingKeyFile -Raw).Trim()
+        Write-Host "  向量化密钥：已从 $EmbeddingKeyFile 载入"
+    } elseif ($env:EMBEDDING_API_KEY) {
+        Write-Host "  向量化密钥：使用环境变量 EMBEDDING_API_KEY"
+    } else {
+        Write-Host "  向量化密钥：未配置，知识库检索将不可用" -ForegroundColor Yellow
     }
 
     Write-Host "  正在启动 Spring Boot（首次运行需下载 Maven 与项目依赖，可能耗时数分钟）..."

@@ -238,9 +238,23 @@
 | `queryAlerts` | 最近告警记录（等级/站点/触发值/状态），回溯上限 168 小时 | AlertService |
 | `queryForecast` | 未来 1–72 小时多模型预报曲线的时次范围与极值 | ForecastService |
 | `getStationInfo` | 站点档案详情（区划/经纬度/海拔/类型/状态） | StationService |
+| `searchKnowledge` | 知识库检索：气象服务已发布文章（预警信号发布标准、防灾避险指引、农业与出行建议），回答须注明来源标题 | KnowledgeBaseService + 向量库 |
 
 > 工具均为**只读**；工具内部异常与「无数据」都转为明确的中文提示返回给模型，
 > 避免模型因拿不到数据而改用常识值编造气象数值。
+
+> **知识库（RAG）**：语料为「气象服务」中 `publish_status=1` 的文章，切块后向量化存入进程内向量库
+> （Spring AI `SimpleVectorStore`，检索侧只依赖 `VectorStore` 接口，可平滑替换为 Redis/Milvus）。
+> 索引在应用启动后构建，内容新增/修改/上下架时由事件触发异步重建。
+> **向量化与对话不是同一家厂商**：DeepSeek 只提供 chat 接口，没有 embeddings（实测 `/v1/embeddings` 返回 404），
+> 故 embedding 单独指向阿里云百炼（通义千问）的 OpenAI 兼容端点，配置项为
+> `spring.ai.openai.embedding.base-url/api-key/options.model`（覆盖 chat 的同名配置，两者互不影响），
+> 密钥走环境变量 `EMBEDDING_API_KEY`。两个易踩的坑：
+> ① base-url 填 `https://dashscope.aliyuncs.com/compatible-mode`，**不要带 `/v1`**——
+> Spring AI 会自动追加 `embeddings-path`（默认 `/v1/embeddings`），带上会拼成 `…/v1/v1/embeddings` 而 404；
+> ② model 必须是带版本号的 `text-embedding-v4`，百炼的文本向量模型不带版本号调不通。
+> 未配置密钥或向量化失败时知识库标记为未就绪，检索工具如实回答「知识库不可用 / 未检索到依据」，
+> 不会让模型改用自己的常识作答。
 
 ---
 
