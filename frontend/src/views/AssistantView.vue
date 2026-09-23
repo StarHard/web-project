@@ -18,7 +18,8 @@ const TOOL_LABELS: Record<string, string> = {
   queryHistory: '历史统计',
   queryForecast: '多模型预报',
   queryAlerts: '告警记录',
-  getStationInfo: '站点档案'
+  getStationInfo: '站点档案',
+  searchKnowledge: '知识库检索'
 }
 
 /** 工具 → 可继续深挖的页面，作为回答下方的引用卡片（把 AI 结论引回图表页面） */
@@ -28,14 +29,15 @@ const TOOL_LINKS: Record<string, { title: string; to: string }> = {
   queryForecast: { title: '精细预报', to: '/forecast' },
   queryAlerts: { title: '灾害告警', to: '/alert' },
   listStations: { title: '站点地图', to: '/map' },
-  getStationInfo: { title: '站点地图', to: '/map' }
+  getStationInfo: { title: '站点地图', to: '/map' },
+  searchKnowledge: { title: '气象服务原文', to: '/content' }
 }
 
 const SAMPLES = [
   '现在各站点的气温和风速是多少？',
   '最近 24 小时有哪些站点触发了告警？',
-  '未来 24 小时气温最高会到多少度？',
-  '昨天主校区站的最大风速出现在几点？'
+  '大风黄色预警的发布标准是什么？',
+  '未来 24 小时气温最高会到多少度？'
 ]
 
 const messages = ref<ChatMessage[]>([])
