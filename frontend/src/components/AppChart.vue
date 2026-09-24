@@ -31,6 +31,8 @@ const props = withDefaults(defineProps<{ option: EChartsOption; height?: string 
 
 const container = ref<HTMLDivElement>()
 const chart = shallowRef<echarts.ECharts>()
+/** 容器尺寸观察器：栅格列数变化、侧边栏收起等只改容器宽度，不触发 window.resize */
+let observer: ResizeObserver | undefined
 
 function render(): void {
   if (!container.value) return
@@ -45,12 +47,19 @@ function resize(): void {
 }
 
 onMounted(() => {
+  const host = container.value
+  if (!host) return
   render()
   window.addEventListener('resize', resize)
+  // ECharts 只在实例创建时按容器算一次尺寸；容器自身变窄（如要素增多使栅格列数变化）不会触发
+  // window.resize，画布会冻结在旧尺寸并溢出到相邻面板。必须监听容器本身。
+  observer = new ResizeObserver(resize)
+  observer.observe(host)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
+  observer?.disconnect()
   chart.value?.dispose()
 })
 
