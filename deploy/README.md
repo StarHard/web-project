@@ -2,10 +2,15 @@
 
 本地开发有两条路径，按机器条件选择：
 
-| 方案 | 适用场景 | 入口 |
-|---|---|---|
-| **A. 便携式脚本**（推荐无 Docker 环境） | 本机直接跑，中间件解压到 `tools/`，无需 Docker，删除目录即卸载 | `scripts/start-all.ps1` |
-| **B. Docker Compose** | 有 Docker Desktop，环境与生产部署一致 | `deploy/docker-compose.yml` |
+| 方案 | 适用场景 | 入口 | 验证状态 |
+|---|---|---|---|
+| **A. 便携式脚本**（推荐无 Docker 环境） | 本机直接跑，中间件解压到 `tools/`，无需 Docker，删除目录即卸载 | `scripts/start-all.ps1` | **已实测验证**，日常开发在用 |
+| **B. Docker Compose** | 有 Docker Desktop，环境与生产部署一致 | `deploy/docker-compose.yml` | **未实测验证**，详见下方「方案 B 说明」 |
+
+> **关于验证状态**：方案 A 是本项目实际使用的路径，已长期跑通（Redis / InfluxDB / Mosquitto / RabbitMQ 四个中间件
+> 由脚本管理，MySQL 需本机自备、脚本只负责建库）；方案 B 的 compose 文件已编写但
+> 尚未在 Docker 环境下执行过（开发机未安装 Docker）。若你选用方案 B，请先按下方「方案 B 说明」核对凭据差异，
+> 并预留中间件就绪时间，不要默认它能开箱即用。
 
 ---
 
@@ -48,10 +53,34 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
 
 ## 方案 B：Docker Compose
 
+> **本方案尚未实测验证**（开发机未安装 Docker，compose 文件编写后未实际执行过）。
+> 选用前请先读完本节的两条注意事项。
+
 ```bash
 cd deploy
 docker compose up -d
 ```
+
+### 注意事项一：凭据口径与方案 A 不同
+
+方案 B 在容器内**新建**了独立账号，与方案 A 连接本机已有中间件所用的账号不一致。
+照抄启动后后端若不显式覆盖环境变量，会出现「中间件都起来了但后端连不上」，
+且报错点分散在 MySQL / InfluxDB / RabbitMQ 三处，不易定位：
+
+| 项 | 方案 A（已跑通） | 方案 B（compose 默认值） | 后端需覆盖的环境变量 |
+|---|---|---|---|
+| MySQL | 本机已有实例，默认 `root` / `123456`（脚本参数可指定） | 容器内新建 `meteo` / `changeme` | `MYSQL_USER=meteo`、`MYSQL_PASSWORD=changeme` |
+| RabbitMQ | `guest` / `guest` | `meteo` / `changeme` | `RABBITMQ_USER=meteo`、`RABBITMQ_PASSWORD=changeme` |
+| InfluxDB token | 脚本调用 setup 时生成，保存于 `tools/influx-token.txt` | `changeme-influx-admin-token` | `INFLUX_TOKEN=changeme-influx-admin-token` |
+| MQTT | Mosquitto | EMQX（协议兼容，后端配置无需改动） | — |
+
+> 建议在 `deploy/.env` 中把上面的密码改成与方案 A 一致的值，或直接以对应环境变量启动后端，二者取其一即可。
+
+### 注意事项二：compose 只含中间件，且未设就绪等待
+
+- compose 只声明 5 个中间件，**后端与前端不在其中**，仍需按 `README.md` 的「快速开始」单独启动。
+- 文件内没有 `healthcheck` 与 `depends_on`，中间件启动需要数十秒；后端若在其中初始化完成前启动，
+  MySQL / InfluxDB 连接会失败。请等容器全部就绪后再启动后端（可用 `docker compose ps` 确认）。
 
 启动后包含：
 

@@ -1,3 +1,18 @@
+# 本地/生产中间件编排（方案 B）
+#
+# ⚠ 本文件尚未实测验证：开发机未安装 Docker，编写后未实际执行过。
+#    已验证的启动路径是方案 A（scripts/start-all.ps1），详见 deploy/README.md。
+#
+# 选用本方案前请先注意两点（详见 README「方案 B 说明」）：
+#   1. 凭据口径与方案 A 不同 —— 这里在容器内新建 meteo/changeme，InfluxDB token 用的是
+#      changeme-influx-admin-token；而方案 A 连的是本机实例（root/123456、guest/guest）
+#      与脚本生成、保存在 tools/influx-token.txt 的 token。照抄启动后若不覆盖 MYSQL_USER、
+#      MYSQL_PASSWORD、RABBITMQ_USER、RABBITMQ_PASSWORD、INFLUX_TOKEN，后端会连不上。
+#   2. 本文件只声明中间件，后端与前端仍需单独启动；且未设 healthcheck/depends_on，
+#      请等容器全部就绪后再启动后端。
+#
+# 建议把密码统一写在 deploy/.env（已被 .gitignore 忽略）中覆盖下面的默认值。
+
 name: meteo
 
 services:
