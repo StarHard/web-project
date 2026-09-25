@@ -340,7 +340,7 @@ onMounted(async () => {
 
 .chip {
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);

@@ -272,7 +272,7 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   padding: 5px 14px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);

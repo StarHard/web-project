@@ -180,7 +180,7 @@ async function handleLogout(): Promise<void> {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: var(--primary);
   color: #fff;
   display: grid;
@@ -225,7 +225,7 @@ async function handleLogout(): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   color: var(--text-muted);
   font-size: 13px;
   margin-bottom: 2px;
@@ -286,7 +286,7 @@ async function handleLogout(): Promise<void> {
   font-style: normal;
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   color: var(--text-muted);
   border: 1px solid var(--border);

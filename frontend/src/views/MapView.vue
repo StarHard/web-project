@@ -37,7 +37,7 @@ function markerContent(point: StationMapPoint): string {
   const ring = point.alertLevel > 0 ? `box-shadow:0 0 0 6px ${color}33;` : ''
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer">
       <div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;${ring}"></div>
-      <span style="font-size:11px;color:#dfe3e9;background:rgba(15,17,22,.85);padding:1px 6px;border-radius:4px;white-space:nowrap">${point.name}</span>
+      <span style="font-size:11px;color:#dfe3e9;background:rgba(15,17,22,.85);padding:1px 6px;border-radius:var(--radius-control);white-space:nowrap">${point.name}</span>
     </div>`
 }
 

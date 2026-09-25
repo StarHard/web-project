@@ -442,7 +442,7 @@ onMounted(async () => {
   flex-shrink: 0;
   margin-top: 2px;
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
   font-size: 10px;
   background: rgba(74, 126, 168, 0.18);
   border: 1px solid rgba(74, 126, 168, 0.35);

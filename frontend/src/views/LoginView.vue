@@ -122,7 +122,7 @@ async function submit(): Promise<void> {
 .login-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-light);
-  border-radius: 14px;
+  border-radius: var(--radius-surface);
   padding: 34px 32px;
   box-shadow: var(--shadow);
   display: flex;

@@ -3,6 +3,14 @@
  * 颜色只用于编码（告警等级、质控状态、在线状态），不做装饰。
  */
 :root {
+  /* 字体：显式声明字体栈，不用 system-ui 兜底——那等于没选字体，
+   * 且系统默认栈会把中文交还给随机回退。中文优先思源系（Noto Sans SC），
+   * 读数另走等宽字体，这是仪器面板最核心的识别特征。 */
+  --font-sans: 'Noto Sans SC', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Segoe UI Variable Text',
+    'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, 'DejaVu Sans Mono',
+    monospace;
+
   --bg: #0f1116;
   --bg-panel: #17191f;
   --bg-elevated: #1e2128;
@@ -22,8 +30,11 @@
   --warning: #d99a2b;
   --danger: #d1574f;
 
-  --radius: 6px;
-  --radius-sm: 4px;
+  /* 圆角：三级语义 token，取代此前散落的 2/3/4/6/8/14/20px。
+   * 仪器面板的取向是小圆角，圆角只表达「这是控件 / 这是容器 / 这是状态标签」。 */
+  --radius-control: 4px;
+  --radius-surface: 6px;
+  --radius-pill: 999px;
   --shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
@@ -42,7 +53,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -60,7 +71,7 @@ a {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-light);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 ::-webkit-scrollbar-track {
@@ -125,7 +136,7 @@ a {
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
   padding: 18px;
 }
 
@@ -181,13 +192,14 @@ a {
   color: var(--text-dim);
 }
 
+/* 读数走等宽字体：数字等宽 + 仪表面板的量测感，是本系统唯一需要「被看清」的内容 */
 .readout-value {
   margin-top: 2px;
+  font-family: var(--font-mono);
   font-size: 22px;
   font-weight: 600;
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.3px;
 }
 
 .readout-range {
@@ -218,7 +230,7 @@ a {
   justify-content: center;
   gap: 6px;
   padding: 8px 16px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-light);
   background: var(--bg-elevated);
   color: var(--text);
@@ -295,7 +307,7 @@ a {
   padding: 8px 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
@@ -327,7 +339,7 @@ a {
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
 }
 
 .table {
@@ -373,7 +385,7 @@ a {
   display: inline-flex;
   align-items: center;
   padding: 2px 9px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   border: 1px solid transparent;
   white-space: nowrap;
@@ -461,7 +473,7 @@ a {
   overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
   box-shadow: var(--shadow);
   padding: 22px;
 }

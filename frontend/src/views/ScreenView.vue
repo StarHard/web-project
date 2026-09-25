@@ -180,7 +180,12 @@ function flopConfig(value: number | null, unit: string, color: string) {
     number: [value ?? 0],
     content: `{nt}${unit}`,
     toFixed: 1,
-    style: { fontSize: 34, fill: color, fontFamily: 'Inter, PingFang SC, sans-serif' }
+    style: {
+      fontSize: 34,
+      fill: color,
+      // 读数走等宽字体；℃ 等符号等宽字体缺失，回退到中文字体承接
+      fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Noto Sans SC', monospace"
+    }
   }
 }
 
@@ -402,7 +407,9 @@ onBeforeUnmount(() => {
   padding: 14px 20px 20px;
   background: radial-gradient(1200px 700px at 50% -10%, rgba(59, 130, 246, 0.16), transparent), #06101f;
   color: #e8eefb;
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans);
+  /* 大屏数字最大、刷新最频繁，全局启用等宽数字，避免每秒刷新时数字宽度跳动 */
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
 }
 
@@ -449,7 +456,7 @@ onBeforeUnmount(() => {
   color: #8ba0bf;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(34, 211, 238, 0.3);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -522,7 +529,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #7dd3fc;
   padding: 1px 10px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: rgba(34, 211, 238, 0.12);
 }
 
@@ -543,7 +550,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
+  border-radius: var(--radius-surface);
   border: 1px solid rgba(34, 211, 238, 0.12);
 }
 

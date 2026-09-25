@@ -246,7 +246,7 @@ function clear(): void {
 .intro-mark {
   width: 42px;
   height: 42px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
   background: rgba(74, 126, 168, 0.16);
   border: 1px solid rgba(74, 126, 168, 0.35);
   color: var(--accent);
@@ -276,7 +276,7 @@ function clear(): void {
 
 .chip {
   padding: 6px 14px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -306,7 +306,7 @@ function clear(): void {
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -339,7 +339,7 @@ function clear(): void {
 
 .bubble {
   padding: 11px 15px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
   font-size: 13.5px;
   line-height: 1.7;
   /* 大模型返回的换行直接生效；提示词已要求不使用 Markdown，此处不做渲染 */
@@ -382,7 +382,7 @@ function clear(): void {
 /* ===== 工具调用留痕 ===== */
 .tools {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-surface);
   background: var(--bg);
   overflow: hidden;
 }
@@ -431,7 +431,7 @@ function clear(): void {
   overflow-y: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   font-family: inherit;
   font-size: 12px;
   color: var(--text-muted);
@@ -450,7 +450,7 @@ function clear(): void {
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-muted);

@@ -26,7 +26,7 @@ export function toast(message: string, type: ToastType = 'info', duration = 3000
   el.textContent = message
   el.style.cssText = [
     'padding:10px 18px',
-    'border-radius:6px',
+    'border-radius:var(--radius-surface)',
     'font-size:14px',
     'color:#fff',
     `background:${COLORS[type]}`,
