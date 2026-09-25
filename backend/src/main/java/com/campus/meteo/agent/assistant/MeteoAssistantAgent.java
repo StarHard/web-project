@@ -1,11 +1,14 @@
 package com.campus.meteo.agent.assistant;
 
 import com.campus.meteo.dto.AssistantResp;
+import com.campus.meteo.dto.ToolInvocation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.util.stream.Collectors;
 
 /**
  * 决策智能体：把自然语言问题交给大模型，由模型规划并调用气象数据工具后作答
@@ -34,6 +37,7 @@ public class MeteoAssistantAgent {
         AssistantResp resp = new AssistantResp();
         resp.setModel(model);
         toolCallRecorder.begin();
+        long startedAt = System.nanoTime();
         try {
             String answer = meteoChatClient.prompt()
                     .user(question)
@@ -50,6 +54,15 @@ public class MeteoAssistantAgent {
         } finally {
             // 无论成功失败都要取走留痕，否则线程复用会把本轮记录带到下一次问答
             resp.setTools(toolCallRecorder.drain());
+        }
+        // 成功路径此前不留任何痕迹，线上无法回答「助手有没有被用、模型是否正常、一轮走了哪些数据链路」。
+        // 此处补齐关键业务动作日志。刻意不记录问题原文，避免用户输入进日志。
+        if ("llm".equals(resp.getSource())) {
+            String calledTools = resp.getTools().stream()
+                    .map(ToolInvocation::getName)
+                    .collect(Collectors.joining(","));
+            log.info("助手问答完成: model={}, toolCount={}, tools=[{}], costMs={}",
+                    model, resp.getTools().size(), calledTools, (System.nanoTime() - startedAt) / 1_000_000);
         }
         return resp;
     }
