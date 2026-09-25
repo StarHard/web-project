@@ -374,10 +374,11 @@ a {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.table-empty {
-  padding: 40px;
+/* 行内空态：文字与图标由 EmptyState 的 compact 形态提供。
+   必须用 td.table-empty 才能盖过 .table td 的单元格内边距，否则这里的留白不生效。 */
+td.table-empty {
+  padding: 14px;
   text-align: center;
-  color: var(--text-muted);
 }
 
 /* ===== 标签 ===== */
@@ -432,17 +433,7 @@ a {
   color: var(--text-muted);
 }
 
-/* ===== 状态提示 ===== */
-.state {
-  padding: 36px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.state-error {
-  color: #e08b86;
-}
+/* 状态提示：空态统一由 components/EmptyState.vue 承载，此处只保留表格行内占位 */
 
 /* ===== 图表容器 ===== */
 .chart {

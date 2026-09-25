@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { pageQcTasks, reviewQcTask, type QcTask } from '@/api/qc'
 import { QC_STATUS_LABELS, elementLabel, formatTime } from '@/utils/format'
@@ -170,7 +171,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="tasks.length === 0">
-            <td colspan="8" class="table-empty">{{ emptyText }}</td>
+            <td colspan="8" class="table-empty"><EmptyState compact icon="search" :title="emptyText" /></td>
           </tr>
         </tbody>
       </table>

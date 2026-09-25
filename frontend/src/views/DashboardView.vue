@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { realtimeCurve, pageStations, type ObsPoint, type Station } from '@/api/monitor'
 import { pageAlerts, type AlertRecord } from '@/api/alert'
 import {
@@ -203,7 +204,12 @@ watch(autoRefresh, setupTimer)
           </select>
         </div>
         <AppChart v-if="curveData.length" :option="curveOption" height="330px" />
-        <div v-else class="state">暂无观测数据</div>
+        <EmptyState
+          v-else
+          icon="inbox"
+          title="暂无观测数据"
+          hint="近 24 小时窗口内没有收到任何观测记录，站点上报后会自动出现在这里"
+        />
       </div>
 
       <div class="panel">
@@ -211,7 +217,13 @@ watch(autoRefresh, setupTimer)
           <h3 class="panel-title">进行中告警</h3>
           <router-link to="/alert" class="btn btn-ghost btn-sm">查看全部</router-link>
         </div>
-        <div v-if="alerts.length === 0" class="state">当前无进行中告警</div>
+        <EmptyState
+          v-if="alerts.length === 0"
+          variant="positive"
+          icon="check"
+          title="当前无进行中告警"
+          hint="有站点触发告警时会在此实时出现，无需刷新"
+        />
         <ul v-else class="alert-list">
           <li v-for="item in alerts" :key="item.id">
             <span

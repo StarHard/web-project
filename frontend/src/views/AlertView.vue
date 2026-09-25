@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import {
   alertStat,
@@ -278,7 +279,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="records.length === 0">
-            <td colspan="7" class="table-empty">暂无告警记录</td>
+            <td colspan="7" class="table-empty"><EmptyState compact icon="inbox" title="暂无告警记录" /></td>
           </tr>
         </tbody>
       </table>
@@ -401,7 +402,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="subscribes.length === 0">
-              <td colspan="4" class="table-empty">尚未订阅任何告警</td>
+              <td colspan="4" class="table-empty"><EmptyState compact icon="bell" title="尚未订阅任何告警" /></td>
             </tr>
           </tbody>
         </table>

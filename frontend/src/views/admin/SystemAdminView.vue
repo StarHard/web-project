@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   pageConfigs,
   pageOperationLogs,
@@ -147,7 +148,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="configs.length === 0">
-              <td colspan="4" class="table-empty">暂无系统参数</td>
+              <td colspan="4" class="table-empty"><EmptyState compact icon="settings" title="暂无系统参数" /></td>
             </tr>
           </tbody>
         </table>
@@ -197,7 +198,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="logs.length === 0">
-              <td colspan="6" class="table-empty">暂无操作日志</td>
+              <td colspan="6" class="table-empty"><EmptyState compact icon="doc" title="暂无操作日志" /></td>
             </tr>
           </tbody>
         </table>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import {
   createAlertRule,
@@ -227,7 +228,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="rules.length === 0">
-            <td colspan="10" class="table-empty">暂无告警规则</td>
+            <td colspan="10" class="table-empty"><EmptyState compact icon="shield" title="暂无告警规则" /></td>
           </tr>
         </tbody>
       </table>

@@ -5,6 +5,7 @@ import type { EChartsOption } from 'echarts'
 import { BorderBox1, Decoration5, DigitalFlop, ScrollBoard } from '@kjgl77/datav-vue3'
 import '@kjgl77/datav-vue3/dist/style.css'
 import AppChart from '@/components/AppChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, realtimeCurve, stationMap, type Station, type StationMapPoint } from '@/api/monitor'
 import { alertStat, pageAlerts, type AlertRecord } from '@/api/alert'
 import {
@@ -362,7 +363,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="chart-area">
                 <ScrollBoard v-if="alerts.length" :config="alertBoardConfig" class="board" />
-                <div v-else class="board-empty">当前无进行中告警</div>
+                <div v-else class="board-empty"><EmptyState compact icon="check" title="当前无进行中告警" /></div>
               </div>
             </div>
           </BorderBox1>

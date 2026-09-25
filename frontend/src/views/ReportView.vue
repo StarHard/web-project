@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { downloadReport, generateReport, pageReports, type ReportFile } from '@/api/content'
 import { formatTime } from '@/utils/format'
@@ -155,7 +156,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="reports.length === 0">
-            <td colspan="6" class="table-empty">暂无报表，点击「生成报表」创建</td>
+            <td colspan="6" class="table-empty"><EmptyState compact icon="doc" title="暂无报表，可点击「生成报表」创建" /></td>
           </tr>
         </tbody>
       </table>

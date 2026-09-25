@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import { queryHistory, submitExport, exportTaskStatus, downloadExport, type HistoryResp } from '@/api/data'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, round } from '@/utils/format'
@@ -297,7 +298,13 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-else-if="result" class="panel state">该时段与粒度下无数据，请调整查询条件</div>
+    <div v-else-if="result" class="panel">
+      <EmptyState
+        icon="search"
+        title="该时段与粒度下无数据"
+        hint="可放宽时间范围或更换聚合粒度后重新查询"
+      />
+    </div>
   </div>
 </template>
 

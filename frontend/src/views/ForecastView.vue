@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, type Station } from '@/api/monitor'
 import {
   backtestForecast,
@@ -259,7 +260,15 @@ onMounted(async () => {
         <span v-if="busy" class="tag tag-info">{{ busy }}</span>
       </div>
       <AppChart v-if="forecast?.points.length" :option="forecastOption" height="340px" />
-      <div v-else class="state">暂无预报数据，可点击「生成预报」或先做「回算」产出样本</div>
+      <EmptyState
+        v-else
+        icon="forecast"
+        title="尚未生成预报"
+        hint="生成后可在此查看逐小时气温与降水曲线；也可先执行「回算」产出历史样本"
+        action-text="生成预报"
+        :action-disabled="!!busy"
+        @action="handleGenerate"
+      />
     </div>
 
     <div class="grid grid-2">
@@ -273,7 +282,15 @@ onMounted(async () => {
             </span>
           </div>
         </template>
-        <div v-else class="state">点击右上角「多模型对比」加载</div>
+        <EmptyState
+          v-else
+          icon="compare"
+          title="尚未加载多模型对比"
+          hint="加载后可对比不同模型对同一站点的预报差异"
+          action-text="加载对比"
+          :action-disabled="!!busy"
+          @action="handleCompare"
+        />
       </div>
 
       <div class="panel">
@@ -308,7 +325,15 @@ onMounted(async () => {
             </tbody>
           </table>
         </template>
-        <div v-else class="state">点击右上角「准确率检验」计算评分</div>
+        <EmptyState
+          v-else
+          icon="chart"
+          title="尚未计算准确率"
+          hint="以近 7 天预报与实况样本计算 MAE / RMSE，实况取观测值，不含订正数据"
+          action-text="开始检验"
+          :action-disabled="!!busy"
+          @action="handleVerify"
+        />
       </div>
     </div>
 
@@ -347,7 +372,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="tablePoints.length === 0">
-              <td :colspan="canOrder ? 6 : 5" class="table-empty">暂无数据</td>
+              <td :colspan="canOrder ? 6 : 5" class="table-empty"><EmptyState compact icon="inbox" title="暂无数据" /></td>
             </tr>
           </tbody>
         </table>

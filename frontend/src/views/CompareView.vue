@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { pageStations, realtimeCompare, type CompareResp, type Station } from '@/api/monitor'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, formatTime } from '@/utils/format'
 import { useFilters } from '@/utils/filters'
@@ -41,10 +42,23 @@ const selectedIds = computed<number[]>(() =>
 
 const hasData = computed(() => (result.value?.times.length ?? 0) > 0)
 
-const emptyHint = computed(() => {
-  if (selectedIds.value.length === 0) return '请先选择对比站点'
-  if (!result.value) return '暂无数据'
-  return '所选时段内无该要素数据，请调整时间范围或要素'
+/** 空态分型：没选站点是操作缺失，选了站点无数据是筛选过窄，两者该引导的方向不同 */
+const emptyState = computed(() => {
+  if (selectedIds.value.length === 0) {
+    return {
+      icon: 'search',
+      title: '请先选择对比站点',
+      hint: `最多可选 ${MAX_STATIONS} 个站点，时间跨度不超过 7 天`
+    }
+  }
+  if (!result.value) {
+    return { icon: 'inbox', title: '暂无数据', hint: '站点上报观测后即可在此对比' }
+  }
+  return {
+    icon: 'search',
+    title: '所选时段内无该要素数据',
+    hint: '可放宽时间范围或更换要素后重新查询'
+  }
 })
 
 const chartOption = computed<EChartsOption>(() => {
@@ -187,7 +201,12 @@ onMounted(async () => {
         <h3 class="panel-title">对比站点</h3>
         <span class="panel-note">已选 {{ selectedIds.length }} / {{ MAX_STATIONS }}</span>
       </div>
-      <div v-if="stations.length === 0" class="state">暂无站点数据</div>
+      <EmptyState
+        v-if="stations.length === 0"
+        icon="station"
+        title="暂无站点数据"
+        hint="站点设备配置完成后即可在此选择对比站点"
+      />
       <div v-else class="station-picker">
         <button
           v-for="item in stations"
@@ -209,7 +228,7 @@ onMounted(async () => {
         <span class="panel-note">{{ hasData ? `${result?.times.length ?? 0} 个时刻` : '' }}</span>
       </div>
       <AppChart v-if="hasData" :option="chartOption" height="360px" />
-      <div v-else class="state">{{ emptyHint }}</div>
+      <EmptyState v-else :icon="emptyState.icon" :title="emptyState.title" :hint="emptyState.hint" />
     </div>
 
     <div class="panel" style="margin-top: 16px">
@@ -248,7 +267,7 @@ onMounted(async () => {
           </tbody>
         </table>
       </div>
-      <div v-else class="state">{{ emptyHint }}</div>
+      <EmptyState v-else :icon="emptyState.icon" :title="emptyState.title" :hint="emptyState.hint" />
     </div>
   </div>
 </template>

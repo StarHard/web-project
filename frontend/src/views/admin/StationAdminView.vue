@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   createDevice,
   createMaintenance,
@@ -239,7 +240,7 @@ onMounted(loadStations)
             </td>
           </tr>
           <tr v-if="stations.length === 0">
-            <td colspan="8" class="table-empty">暂无站点数据</td>
+            <td colspan="8" class="table-empty"><EmptyState compact icon="station" title="暂无站点数据" /></td>
           </tr>
         </tbody>
       </table>
@@ -335,7 +336,7 @@ onMounted(loadStations)
                 </td>
               </tr>
               <tr v-if="devices.length === 0">
-                <td colspan="6" class="table-empty">该站点暂无设备</td>
+                <td colspan="6" class="table-empty"><EmptyState compact icon="inbox" title="该站点暂无设备" /></td>
               </tr>
             </tbody>
           </table>
@@ -375,7 +376,7 @@ onMounted(loadStations)
                 <td>{{ record.operator }}</td>
               </tr>
               <tr v-if="maintenance.length === 0">
-                <td colspan="4" class="table-empty">暂无运维记录</td>
+                <td colspan="4" class="table-empty"><EmptyState compact icon="doc" title="暂无运维记录" /></td>
               </tr>
             </tbody>
           </table>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   changeUserStatus,
   createUser,
@@ -213,7 +214,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="users.length === 0">
-              <td colspan="8" class="table-empty">暂无用户</td>
+              <td colspan="8" class="table-empty"><EmptyState compact icon="users" title="暂无用户" /></td>
             </tr>
           </tbody>
         </table>

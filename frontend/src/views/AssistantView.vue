@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { askAssistant, type AssistantAnswer, type ToolInvocation } from '@/api/assistant'
 
 interface ChatMessage {
@@ -139,18 +140,18 @@ function clear(): void {
 
     <div class="panel chat">
       <div ref="scrollRef" class="stream">
-        <div v-if="messages.length === 0" class="intro">
-          <div class="intro-mark"><AppIcon name="assistant" :size="22" /></div>
-          <p class="intro-title">可以直接问系统里的真实数据</p>
-          <p class="intro-note">
-            助手不凭常识作答：每个数值都来自工具查询，回答下方会列出本轮实际调用的数据接口与返回内容。
-          </p>
-          <div class="samples">
+        <EmptyState
+          v-if="messages.length === 0"
+          icon="assistant"
+          title="可以直接问系统里的真实数据"
+          hint="助手不凭常识作答：每个数值都来自工具查询，回答下方会列出本轮实际调用的数据接口与返回内容。"
+        >
+          <template #actions>
             <button v-for="item in SAMPLES" :key="item" class="chip" @click="send(item)">
               {{ item }}
             </button>
-          </div>
-        </div>
+          </template>
+        </EmptyState>
 
         <div v-for="(message, index) in messages" :key="index" class="turn" :class="message.role">
           <div class="avatar">{{ message.role === 'user' ? '我' : 'AI' }}</div>
@@ -238,42 +239,7 @@ function clear(): void {
   padding: 18px;
 }
 
-/* ===== 空态引导 ===== */
-.intro {
-  padding: 22px 6px;
-}
-
-.intro-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-surface);
-  background: rgba(74, 126, 168, 0.16);
-  border: 1px solid rgba(74, 126, 168, 0.35);
-  color: var(--accent);
-  display: grid;
-  place-items: center;
-  margin-bottom: 14px;
-}
-
-.intro-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.intro-note {
-  margin: 6px 0 16px;
-  max-width: 580px;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.samples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
+/* 空态由 EmptyState 统一承载，示例问题通过 actions 插槽传入 */
 .chip {
   padding: 6px 14px;
   border-radius: var(--radius-pill);

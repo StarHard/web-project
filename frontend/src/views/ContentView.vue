@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import DataPager from '@/components/DataPager.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   articleDetail,
   changeArticlePublishStatus,
@@ -125,7 +126,15 @@ onMounted(loadArticles)
         </div>
       </div>
     </div>
-    <div v-else-if="!loading" class="panel state">暂无已发布的气象服务内容</div>
+    <div v-else-if="!loading" class="panel">
+      <EmptyState
+        icon="doc"
+        title="暂无已发布的气象服务内容"
+        hint="发布后的农业气象、旅游气象与出行指数内容会展示在这里"
+        :action-text="canManage ? '新增内容' : undefined"
+        @action="openCreate"
+      />
+    </div>
 
     <DataPager
       v-model:pageNum="pageNum"
