@@ -159,6 +159,8 @@ public class ObsReader {
             log.warn("非法站点编码，拒绝查询: {}", stationCode);
             return List.of();
         }
+        // 向下对齐结束边界，挤掉 aggregateWindow 会补出的末尾残窗
+        Instant alignedStop = alignStopToWindow(start, stop, window);
         String flux = """
                 from(bucket: "%s")
                   |> range(start: %s, stop: %s)
@@ -166,9 +168,40 @@ public class ObsReader {
                   %s
                   |> aggregateWindow(every: %s, fn: mean, createEmpty: false)
                   |> sort(columns: ["_time"])
-                """.formatted(properties.getBucket(), start.toString(), stop.toString(),
+                """.formatted(properties.getBucket(), start.toString(), alignedStop.toString(),
                 stationCode, QC_FLAG_FILTER, window);
         return executeQuery(flux, stationCode);
+    }
+
+    /**
+     * 把聚合查询的结束边界向下对齐到窗口边界。
+     *
+     * Flux 的 aggregateWindow 会为范围末尾补一个**未闭合的残窗**：其 _time 直接等于查询的 stop
+     * （实测相隔数秒的两次调用，末点时间戳随 now() 移动），值为该残窗内的均值——等于拿几分钟的
+     * 数据冒充一整个窗口。对累计类要素尤其失真：大屏「累计降水」按「小时均值 × 1h」求和，
+     * 残窗会让该小时的雨量被系统性低估。
+     *
+     * 向下对齐后末尾只剩完整窗口。若对齐结果不晚于 start（请求跨度不足一个窗口），
+     * 保持原边界——宁可返回一个残窗，也不构造出空区间让界面突然无数据。
+     *
+     * 对齐基准为 Unix 纪元，与 aggregateWindow 的默认 offset: 0s 一致。
+     */
+    private Instant alignStopToWindow(Instant start, Instant stop, String window) {
+        long windowMillis = windowToMillis(window);
+        long epochMillis = stop.toEpochMilli();
+        Instant aligned = Instant.ofEpochMilli(epochMillis - Math.floorMod(epochMillis, windowMillis));
+        return aligned.isAfter(start) ? aligned : stop;
+    }
+
+    /** 聚合窗口字符串（如 30s/15m/1h/1d）换算为毫秒；调用前已由 WINDOW_PATTERN 校验格式 */
+    private long windowToMillis(String window) {
+        long amount = Long.parseLong(window.substring(0, window.length() - 1));
+        return switch (window.charAt(window.length() - 1)) {
+            case 's' -> amount * 1000L;
+            case 'm' -> amount * 60_000L;
+            case 'h' -> amount * 3_600_000L;
+            default -> amount * 86_400_000L;
+        };
     }
 
     /**
