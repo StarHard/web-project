@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { sparseSymbolStyle } from '@/utils/chart'
 import { realtimeCurve, pageStations, type ObsPoint, type Station } from '@/api/monitor'
 import { pageAlerts, type AlertRecord } from '@/api/alert'
 import {
@@ -65,7 +66,9 @@ const curveOption = computed<EChartsOption>(() => {
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', valueFormatter: (value) => `${value} ${ELEMENT_UNITS[chartElement.value] ?? ''}` },
-    grid: { left: 48, right: 24, top: 22, bottom: 34 },
+    // containLabel：让栅格让出轴标签所需空间。日期标签较长且末位标签以刻度为中心，
+    // 不预留就会有一半落到画布外被裁掉；right 再留一段，覆盖 containLabel 未计足的部分
+    grid: { left: 48, right: 36, top: 22, bottom: 34, containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
@@ -85,7 +88,7 @@ const curveOption = computed<EChartsOption>(() => {
         name: elementLabel(chartElement.value),
         type: 'line',
         smooth: true,
-        showSymbol: false,
+        ...sparseSymbolStyle(values.length),
         data: values,
         lineStyle: { width: 2, color: '#6f9dc4' },
         areaStyle: {

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, type Station } from '@/api/monitor'
 import { queryHistory, submitExport, exportTaskStatus, downloadExport, type HistoryResp } from '@/api/data'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, round } from '@/utils/format'
@@ -77,7 +78,8 @@ function buildOption(element: string, points: { time: string; value: number | nu
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    grid: { left: 52, right: 24, top: 20, bottom: 46 },
+    // containLabel：让栅格让出轴标签所需空间，否则末位长日期标签会有一半落到画布外
+    grid: { left: 52, right: 24, top: 20, bottom: 46, containLabel: true },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: '#292e36' }],
     xAxis: {
       type: 'category',
@@ -98,7 +100,7 @@ function buildOption(element: string, points: { time: string; value: number | nu
         name: elementLabel(element),
         type: isRain ? 'bar' : 'line',
         smooth: !isRain,
-        showSymbol: false,
+        ...sparseSymbolStyle(points.length),
         barMaxWidth: 14,
         data: points.map((point) => point.value),
         lineStyle: { width: 2, color: '#6f9dc4' },

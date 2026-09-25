@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, type Station } from '@/api/monitor'
 import {
   backtestForecast,
@@ -72,7 +73,7 @@ const forecastOption = computed<EChartsOption>(() => {
         name: '气温',
         type: 'line',
         smooth: true,
-        showSymbol: false,
+        ...sparseSymbolStyle(points.length),
         yAxisIndex: 0,
         data: points.map((point) => point.elements.temp ?? null),
         lineStyle: { width: 2, color: '#6f9dc4' },
@@ -122,15 +123,18 @@ const compareOption = computed<EChartsOption>(() => {
       splitLine: { lineStyle: { color: '#21252c' } },
       axisLabel: { color: '#98a0ab', fontSize: 11 }
     },
-    series: modelNames.map((model, index) => ({
-      name: model,
-      type: 'line' as const,
-      smooth: true,
-      showSymbol: false,
-      data: (compare.value?.models[model] ?? []).map((point) => point.value),
-      lineStyle: { width: 2, color: palette[index % palette.length] },
-      itemStyle: { color: palette[index % palette.length] }
-    }))
+    series: modelNames.map((model, index) => {
+      const values = compare.value?.models[model] ?? []
+      return {
+        name: model,
+        type: 'line' as const,
+        smooth: true,
+        ...sparseSymbolStyle(values.length),
+        data: values.map((point) => point.value),
+        lineStyle: { width: 2, color: palette[index % palette.length] },
+        itemStyle: { color: palette[index % palette.length] }
+      }
+    })
   }
 })
 

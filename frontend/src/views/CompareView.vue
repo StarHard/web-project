@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, realtimeCompare, type CompareResp, type Station } from '@/api/monitor'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, formatTime } from '@/utils/format'
 import { useFilters } from '@/utils/filters'
@@ -76,7 +77,8 @@ const chartOption = computed<EChartsOption>(() => {
       textStyle: { color: '#98a0ab', fontSize: 12 },
       inactiveColor: '#5c646f'
     },
-    grid: { left: 54, right: 24, top: 40, bottom: 48 },
+    // containLabel：让栅格让出轴标签所需空间，否则末位长日期标签会有一半落到画布外
+    grid: { left: 54, right: 24, top: 40, bottom: 48, containLabel: true },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: '#292e36' }],
     xAxis: {
       type: 'category',
@@ -98,7 +100,8 @@ const chartOption = computed<EChartsOption>(() => {
         name: item.stationName,
         type: 'line' as const,
         smooth: true,
-        showSymbol: false,
+        // 计数排除缺测补位：时间轴并集对齐后补的 null 不是真实数据点
+        ...sparseSymbolStyle(item.values.filter((value) => value !== null).length),
         // 缺测处断开而非连线：跨站时间轴对齐后补的 null 不代表真实缺测时刻之间的连续变化
         connectNulls: false,
         data: item.values,

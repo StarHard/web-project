@@ -6,6 +6,7 @@ import { BorderBox1, Decoration5, DigitalFlop, ScrollBoard } from '@kjgl77/datav
 import '@kjgl77/datav-vue3/dist/style.css'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import { sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, realtimeCurve, stationMap, type Station, type StationMapPoint } from '@/api/monitor'
 import { alertStat, pageAlerts, type AlertRecord } from '@/api/alert'
 import {
@@ -90,7 +91,7 @@ const trendOption = computed<EChartsOption>(() => {
     name: stations.value.find((item) => item.stationCode === stationCode)?.name ?? stationCode,
     type: 'line' as const,
     smooth: true,
-    showSymbol: false,
+    ...sparseSymbolStyle(points.length),
     data: points.map((point) => [point.ts, point.elements?.temp ?? null]),
     lineStyle: { width: 2, color: palette[index % palette.length] },
     itemStyle: { color: palette[index % palette.length] }
