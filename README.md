@@ -68,12 +68,15 @@ AI 部分的工程底线（贯穿上述四项）：
 # 首次运行会下载并解压全部中间件到 tools/（约 270MB，需数分钟）
 powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
 
-# 指定 MySQL 密码（默认 123456），并注入 7 天演示数据
-powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlPassword 你的密码 -Seed
+# 指定 MySQL 密码（默认 123456）
+powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlPassword 你的密码
 ```
 
 脚本依次完成：准备中间件 → 启动 Redis / InfluxDB / Mosquitto / RabbitMQ → 初始化 InfluxDB → 建 `meteo` 库 → 启动后端。
 日志在 `tools/app.log`。之后重启可加 `-SkipSetup` 跳过下载步骤。
+
+演示用的历史观测（7 天逐小时）由后端启动时**按与实时链路相同的物理模型自动回填**，
+历史已存在则跳过，无需额外步骤；清空时序库（`scripts\clear-timeseries.ps1`）后重启即可重建。
 
 ### 第 2 步：启动前端
 

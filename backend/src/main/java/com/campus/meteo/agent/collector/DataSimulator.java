@@ -1,6 +1,12 @@
 package com.campus.meteo.agent.collector;
 
+import com.campus.meteo.common.constant.QcFlag;
+import com.campus.meteo.influx.ObsData;
+import com.campus.meteo.influx.ObsReader;
+import com.campus.meteo.influx.ObsWriter;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -10,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
@@ -35,6 +42,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>降水为间歇事件</b>：由云量超过阈值触发，自然形成「下几小时、停一段」的形态。
  *       原实现逐条独立掷骰子（12%/条），在小时尺度上退化成「每小时都有雨」。</li>
  *   <li><b>局地偏差有界</b>：相距十几公里的站点实况应高度相关，偏差幅度控制在物理合理范围内。</li>
+ *   <li><b>历史回填</b>：启动时若该站点历史观测为空，就用同一套模型补齐 N 天逐小时观测。
+ *       历史与实时出自同一份公式，正是本类承担回填的全部理由——旧做法由独立的 PowerShell
+ *       脚本灌历史，两套模型互不相干，边界处会出现「历史说湿度 76%、实时说 94%」这类跳变，
+ *       质控的时间一致性检验会如实把实时数据判为可疑，结果质控通过的数据长时间冻结、
+ *       审核队列被垃圾任务刷满。</li>
  *   <li><b>重启接续</b>：要素是时刻的函数，重启后天然连续，无需再从库里读最近观测续跑。</li>
  * </ul>
  *
@@ -117,15 +129,23 @@ public class DataSimulator {
             "FARM02", Map.of("temp", 1.2, "humi", -2.0, "pres", -0.4, "wind_speed", 0.4, "wind_dir", 10.0));
 
     private final CollectorAgent collectorAgent;
+    private final ObsWriter obsWriter;
+    private final ObsReader obsReader;
     private final Random random = new Random();
+
+    /** 启动时回填的历史天数；0 表示不回填 */
+    @Value("${meteo.simulator.backfill-days:7}")
+    private int backfillDays;
 
     /** 通道 → 各周期的相位（由固定种子生成，保证同一通道的波形可复现） */
     private final Map<String, double[]> channelPhases = new ConcurrentHashMap<>();
     /** 站点 → 最近注入尖峰的小时序号 */
     private final Map<String, Long> lastSpikeHour = new ConcurrentHashMap<>();
 
-    public DataSimulator(CollectorAgent collectorAgent) {
+    public DataSimulator(CollectorAgent collectorAgent, ObsWriter obsWriter, ObsReader obsReader) {
         this.collectorAgent = collectorAgent;
+        this.obsWriter = obsWriter;
+        this.obsReader = obsReader;
     }
 
     @Scheduled(fixedDelayString = "${meteo.simulator.interval-ms:60000}", initialDelay = 5_000)
@@ -133,6 +153,9 @@ public class DataSimulator {
         long now = System.currentTimeMillis();
         for (String stationCode : STATIONS) {
             Map<String, Double> elements = computeElements(stationCode, now);
+            // 尖峰只注入实时链路：回填历史必须是干净数据，否则会把 -50℃ 这种不可能的值
+            // 以 qc_flag=passed 直接写进时序库——它不经过质控，也就没有人工审核兜底
+            maybeInjectSpike(stationCode, elements, now);
             String payload = """
                     {"stationCode":"%s","ts":%d,"elements":{
                     "temp":%.1f,"humi":%.1f,"pres":%.1f,"wind_speed":%.1f,"wind_dir":%.0f,
@@ -236,7 +259,6 @@ public class DataSimulator {
         elements.put("vis", round1(vis));
         elements.put("evap", round2(evap));
 
-        maybeInjectSpike(stationCode, elements, epochMillis);
         return elements;
     }
 
@@ -286,6 +308,46 @@ public class DataSimulator {
 
     private double noise(double amplitude) {
         return (random.nextDouble() * 2 - 1) * amplitude;
+    }
+
+    /**
+     * 启动时用同一套物理模型回填历史观测（逐小时）。
+     *
+     * <p>只在该站点的历史窗口内没有任何观测时才回填，因此重启不会重复写入。
+     * 区间末端留出 1 小时给实时链路，避免与刚写入的实时数据重叠。
+     * 回填以 qc_flag=passed 直接落库：这些值本身就出自与实时相同的公式，
+     * 再走一遍质控只会让启动变慢，且质控的 1 小时基准窗口也无从比对。
+     *
+     * <p>回填失败不阻断启动——实时链路不依赖历史数据。
+     */
+    @PostConstruct
+    void backfillHistoryIfEmpty() {
+        if (backfillDays <= 0) {
+            return;
+        }
+        Instant to = Instant.now().truncatedTo(ChronoUnit.HOURS).minus(1, ChronoUnit.HOURS);
+        Instant from = to.minus(backfillDays, ChronoUnit.DAYS);
+        for (String stationCode : STATIONS) {
+            try {
+                if (!obsReader.queryObservedRange(stationCode, from, to).isEmpty()) {
+                    log.info("历史观测已存在，跳过回填: station={}", stationCode);
+                    continue;
+                }
+                int written = 0;
+                for (Instant ts = from; !ts.isAfter(to); ts = ts.plus(1, ChronoUnit.HOURS)) {
+                    obsWriter.writeObs(ObsData.builder()
+                            .stationCode(stationCode)
+                            .ts(ts)
+                            .qcFlag(QcFlag.PASSED.getValue())
+                            .elements(computeElements(stationCode, ts.toEpochMilli()))
+                            .build());
+                    written++;
+                }
+                log.info("历史回填完成: station={}, 条数={}, 区间={} ~ {}", stationCode, written, from, to);
+            } catch (Exception e) {
+                log.warn("历史回填失败，跳过该站点: station={}, err={}", stationCode, e.getMessage());
+            }
+        }
     }
 
     /**

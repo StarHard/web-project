@@ -1,8 +1,14 @@
 package com.campus.meteo.agent.collector;
 
+import com.campus.meteo.common.constant.QcFlag;
+import com.campus.meteo.influx.ObsData;
+import com.campus.meteo.influx.ObsReader;
+import com.campus.meteo.influx.ObsWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -11,7 +17,13 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 数据模拟器的物理合理性测试。
@@ -32,10 +44,13 @@ class DataSimulatorTest {
     /** 采样日固定为 2026 年 9 月，保证结果可复现（模拟器本身的噪声幅度很小，不足以影响结论） */
     private static final int MONTH = 9;
 
-    /** 低于该气温即视为注入的异常尖峰（模拟器注入区间为 -50 ~ -60℃） */
+    /** 低于该气温即视为注入的异常尖峰（模拟器注入区间为 -50 ~ -60℃）。
+     *  computeElements 本身已不再注入尖峰（尖峰只在实时链路由 publish 叠加），
+     *  这里保留过滤是为了让物理断言在尖峰机制变动时依然成立。 */
     private static final double SPIKE_THRESHOLD = -40.0;
 
-    private final DataSimulator simulator = new DataSimulator(mock(CollectorAgent.class));
+    private final DataSimulator simulator =
+            new DataSimulator(mock(CollectorAgent.class), mock(ObsWriter.class), mock(ObsReader.class));
 
     /** 一条带时刻的采样 */
     private record Sample(int hour, Map<String, Double> values) {
@@ -287,5 +302,79 @@ class DataSimulatorTest {
             maxDiff = Math.max(maxDiff, Math.abs(campus.get(i).values().get("temp") - farm.get(i).values().get("temp")));
         }
         assertTrue(maxDiff < 4.0, "两站气温差应保持在物理合理范围内，实际最大 " + maxDiff + "℃");
+    }
+
+    // ---------------- 历史回填 ----------------
+
+    /**
+     * 构造可测的回填实例。backfillDays 是 @Value 注入的私有字段，
+     * 这里用反射设置，避免为此在生产类上开测试专用接口。
+     */
+    private DataSimulator simulatorWith(ObsWriter writer, ObsReader reader, int backfillDays) {
+        DataSimulator instance = new DataSimulator(mock(CollectorAgent.class), writer, reader);
+        try {
+            java.lang.reflect.Field field = DataSimulator.class.getDeclaredField("backfillDays");
+            field.setAccessible(true);
+            field.setInt(instance, backfillDays);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法设置 backfillDays", e);
+        }
+        return instance;
+    }
+
+    @Test
+    @DisplayName("历史为空时用同一套模型回填逐小时观测，且与同刻实时取值一致")
+    void backfillsHistoryWithSameModel() {
+        ObsWriter writer = mock(ObsWriter.class);
+        ObsReader reader = mock(ObsReader.class);
+        when(reader.queryObservedRange(anyString(), any(), any())).thenReturn(List.of());
+        DataSimulator instance = simulatorWith(writer, reader, 7);
+
+        instance.backfillHistoryIfEmpty();
+
+        ArgumentCaptor<ObsData> captor = ArgumentCaptor.forClass(ObsData.class);
+        // 7 天逐小时、两端闭合 → 每站 169 条，两站共 338 条
+        verify(writer, times(338)).writeObs(captor.capture());
+        List<ObsData> written = captor.getAllValues();
+
+        ObsData sample = written.get(0);
+        assertEquals(2, written.stream().map(ObsData::getStationCode).distinct().count(), "两个站点都要回填");
+        assertEquals(QcFlag.PASSED.getValue(), sample.getQcFlag(), "回填数据直接以 passed 落库");
+        assertEquals(0, sample.getTs().getEpochSecond() % 3600, "回填点应落在整点");
+
+        // 关键性质：回填值与同刻实时模型只差读数抖动，没有系统性偏差——
+        // 这正是废弃独立 PowerShell 灌数脚本要解决的问题
+        Map<String, Double> live = instance.computeElements(sample.getStationCode(), sample.getTs().toEpochMilli());
+        assertTrue(Math.abs(written.get(0).getElements().get("temp") - live.get("temp")) <= 0.6,
+                "回填气温与同刻实时模型应一致（仅抖动范围内）");
+        assertTrue(Math.abs(written.get(0).getElements().get("humi") - live.get("humi")) <= 3.5,
+                "回填湿度与同刻实时模型应一致（仅抖动范围内）");
+    }
+
+    @Test
+    @DisplayName("历史已存在时不重复回填")
+    void skipsBackfillWhenHistoryExists() {
+        ObsWriter writer = mock(ObsWriter.class);
+        ObsReader reader = mock(ObsReader.class);
+        when(reader.queryObservedRange(anyString(), any(), any())).thenReturn(List.of(
+                ObsData.builder().stationCode("CAMPUS01").ts(Instant.now()).elements(Map.of("temp", 20.0)).build()));
+        DataSimulator instance = simulatorWith(writer, reader, 7);
+
+        instance.backfillHistoryIfEmpty();
+
+        verify(writer, never()).writeObs(any());
+    }
+
+    @Test
+    @DisplayName("backfill-days=0 时完全跳过回填，连历史查询都不发起")
+    void skipsBackfillWhenDisabled() {
+        ObsWriter writer = mock(ObsWriter.class);
+        ObsReader reader = mock(ObsReader.class);
+        DataSimulator instance = simulatorWith(writer, reader, 0);
+
+        instance.backfillHistoryIfEmpty();
+
+        verify(reader, never()).queryObservedRange(anyString(), any(), any());
+        verify(writer, never()).writeObs(any());
     }
 }

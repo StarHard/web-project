@@ -12,9 +12,9 @@
   质控的时间一致性检验会如实把新数据判为可疑（差值确实超限），导致质控通过的数据
   长时间冻结、审核队列被垃圾任务刷满。因此需要把旧数据整体清掉、重新灌入。
 
-  清空后请依次执行：
-    1) powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1      # 重启后端，加载新的质控与模拟器
-    2) powershell -ExecutionPolicy Bypass -File scripts\seed-demo-data.ps1 # 重新灌入 7 天演示数据
+  清空后只需重启后端（scripts\start-all.ps1）：后端启动时会用与实时相同的物理模型
+  自动回填 7 天逐小时历史观测（见 DataSimulator.backfillHistoryIfEmpty），
+  不再需要单独的灌数脚本。
 
 .PARAMETER Force
   跳过确认提示
@@ -41,7 +41,7 @@ $token = (Get-Content $TokenFile -Raw).Trim()
 
 Write-Host "将删除 meteo 桶中以下 measurement 的全部数据：" -ForegroundColor White
 Write-Host "  obs_min / obs_hour（观测时序）、fcst（预报产品）" -ForegroundColor White
-Write-Host "  影响：历史趋势、统计报表、预报检验样本都会被清空，需重新执行 seed-demo-data.ps1" -ForegroundColor Yellow
+Write-Host "  影响：历史趋势、统计报表、预报检验样本都会被清空，重启后端会自动回填" -ForegroundColor Yellow
 
 if (-not $Force) {
     $answer = Read-Host "确认清空？(y/N)"
@@ -93,5 +93,4 @@ Write-Host ""
 Write-Host "  时序数据已清空" -ForegroundColor Green
 Write-Host ""
 Write-Host "后续步骤：" -ForegroundColor White
-Write-Host "  1) 重启后端以加载新的模拟器与质控：scripts\start-all.ps1"
-Write-Host "  2) 重新灌入演示数据：              scripts\seed-demo-data.ps1"
+Write-Host "  重启后端即可自动回填 7 天历史观测：scripts\start-all.ps1"

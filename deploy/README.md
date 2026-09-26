@@ -20,8 +20,8 @@
 # 首次运行（自动下载并解压全部中间件，约 270MB，需数分钟）
 powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
 
-# 带演示数据（注入 7 天历史观测，便于查看预报与准确率检验）
-powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -Seed
+# 清理时序库并重建历史（重启后端即自动回填 7 天逐小时观测）
+powershell -ExecutionPolicy Bypass -File scripts\clear-timeseries.ps1
 
 # 指定 MySQL 账号密码
 powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlUser root -MysqlPassword 你的密码
@@ -37,11 +37,12 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
 | `scripts/setup-middleware.ps1` | 下载并解压 Redis / InfluxDB / Mosquitto / Erlang + RabbitMQ 到 `tools/` |
 | `scripts/start-all.ps1` | 启动全部中间件 + 初始化 InfluxDB + 建库 + 启动后端（自动识别 JDK，无需预装 Maven） |
 | `scripts/stop-all.ps1` | 按端口停止全部服务，保留数据 |
-| `scripts/seed-demo-data.ps1` | 注入 7 天逐小时历史观测（含日变化曲线），供预报与检验演示 |
+| `scripts/clear-timeseries.ps1` | 清空时序库（`obs_min` / `obs_hour` / `fcst`），用于重置演示数据基线 |
 
 说明：
 
 - **MySQL 不在脚本管理范围**：使用本机已装的 MySQL/MariaDB（XAMPP 亦可），脚本只负责创建 `meteo` 库，建表由 Flyway 在服务启动时自动完成。
+- **历史观测自动回填**：后端启动时若历史为空，会用与实时链路**相同的物理模型**补齐 7 天逐小时观测（由 `meteo.simulator.backfill-days` 配置，设 0 关闭）。因此不再需要单独的灌数脚本——两套模型互不相干时，衔接处会出现明显跳变被质控判为可疑，进而冻结质控数据、刷满审核队列。
 - **数据全在仓库内**：InfluxDB 数据目录被显式指定为 `tools/influxdb/data`（默认是 `%USERPROFILE%\.influxdbv2`，已避免），删除 `tools/` 即彻底清理。
 - **唯一例外**：Mosquitto 官方安装包会注册一个 Windows 服务 `mosquitto`（开机自启）。`setup-middleware.ps1` 在有管理员权限时会自动移除；否则请手动执行：
   ```powershell

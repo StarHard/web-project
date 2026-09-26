@@ -23,19 +23,15 @@
 .PARAMETER SkipSetup
   跳过中间件下载/解压步骤（中间件已准备就绪时使用）
 
-.PARAMETER Seed
-  启动后注入 7 天历史观测演示数据（便于查看预报与准确率检验效果）
-
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
-  powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlPassword 你的密码 -Seed
+  powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlPassword 你的密码
 #>
 param(
     [string]$MysqlUser = "root",
     [string]$MysqlPassword = "123456",
     [int]$MysqlPort = 3306,
-    [switch]$SkipSetup,
-    [switch]$Seed
+    [switch]$SkipSetup
 )
 
 $ErrorActionPreference = "Stop"
@@ -297,12 +293,10 @@ if (Test-Port 8080) {
     }
 }
 
-# ---------------- 可选：注入演示数据 ----------------
-if ($Seed) {
-    Write-Host "== 注入演示数据 ==" -ForegroundColor White
-    Start-Sleep -Seconds 8   # 等待采集链路与 Flyway 就绪
-    & (Join-Path $PSScriptRoot "seed-demo-data.ps1")
-}
+# 历史观测由后端启动时自动回填（DataSimulator.backfillHistoryIfEmpty）：
+# 用与实时链路相同的物理模型补齐 7 天逐小时观测，历史已存在则跳过。
+# 原先的独立灌数脚本用的是另一套简化模型，两套模型互不相干会在衔接处产生跳变，
+# 质控的时间一致性检验会如实把实时数据判为可疑。清理时序库后重启即可重建。
 
 Write-Host ""
 Write-Host "环境就绪！" -ForegroundColor Green
