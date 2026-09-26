@@ -84,7 +84,6 @@ class QcAgentTest {
         lenient().when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
                 .thenReturn(true);
         lenient().when(stationMapper.selectList(any())).thenReturn(List.of(selfStation(), neighborStation()));
-        lenient().when(obsReader.queryLastAcceptedValues(anyString(), any(), any())).thenReturn(Map.of());
         lenient().when(obsReader.queryObservedRange(anyString(), any(), any())).thenReturn(List.of());
         // 默认关闭全部检验阈值，避免 Mockito 对 double 返回 0.0 把正常值判成超限；
         // 需要验证某一类检查的用例自行打桩覆盖（后定义的 lenient 桩优先）。
@@ -111,7 +110,7 @@ class QcAgentTest {
     @DisplayName("要素均在有效区间内 → 标记 passed 并分发到告警链路、实时推送与最新缓存")
     void shouldMarkPassedAndDispatchWhenAllChecksPass() throws Exception {
         stubTempThresholds(40.0, -10.0, 5.0);
-        when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("temp", 24.0));
+        stubBaseline(Map.of("temp", 24.0));
 
         ObsData obs = obs(Map.of("temp", 25.0));
 
@@ -153,8 +152,8 @@ class QcAgentTest {
     @DisplayName("时间一致性变化量超限 → 标记 suspect 且审核任务能取到要素名")
     void shouldCreateReviewTaskForTimeConsistencyViolation() throws Exception {
         stubTempThresholds(40.0, -10.0, 5.0);
-        // 上一时点 10℃，本次 25℃，变化 15℃ 超过 change.max=5
-        when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("temp", 10.0));
+        // 1 小时前 10℃，本次 25℃ → 折合 15℃/h，超过 change.max=5 ℃/h
+        stubBaseline(Map.of("temp", 10.0));
 
         ObsData obs = obs(Map.of("temp", 25.0));
 
@@ -169,11 +168,25 @@ class QcAgentTest {
     }
 
     @Test
+    @DisplayName("变化率按实际基准间隔归一化：2 小时变化 8℃ 折合 4℃/h，不超限")
+    void shouldNormalizeChangeByElapsedHours() throws Exception {
+        stubTempThresholds(40.0, -10.0, 5.0);
+        // 回归点：若沿用「直接比较绝对差值」的老实现，8℃ 会超过 change.max=5 被误判为可疑；
+        // 按 2 小时的基准间隔折算成每小时是 4℃/h，属正常波动
+        stubBaseline(Map.of("temp", 12.0), 2 * 3600);
+
+        qcAgent.onRawData(obs(Map.of("temp", 20.0)), channel, DELIVERY_TAG);
+
+        assertThat(capturedQcFlag()).isEqualTo(QcFlag.PASSED.getValue());
+        verify(qcReviewTaskMapper, never()).insert(any(QcReviewTask.class));
+    }
+
+    @Test
     @DisplayName("时间一致性覆盖全部要素：湿度超限同样标记可疑")
     void shouldCheckTimeConsistencyForNonTemperatureElements() throws Exception {
         // 只给湿度配阈值，气温阈值取默认的 MAX_VALUE（不检查）
         lenient().when(thresholdService.getThreshold(eq("qc.humi.change.max"), anyDouble())).thenReturn(15.0);
-        when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("humi", 40.0));
+        stubBaseline(Map.of("humi", 40.0));
 
         ObsData obs = obs(Map.of("humi", 80.0));
 
@@ -186,16 +199,18 @@ class QcAgentTest {
     }
 
     @Test
-    @DisplayName("时间一致性查询带上界（排除本条自身），否则比较值恒等于当前值永不触发")
-    void shouldQueryPreviousValuesWithUpperBound() throws Exception {
+    @DisplayName("时间一致性基准窗口为 [观测时刻-2h, 观测时刻-1h]，与阈值的每小时单位匹配")
+    void shouldQueryBaselineWindowOneHourBefore() throws Exception {
         stubTempThresholds(40.0, -10.0, 5.0);
 
         qcAgent.onRawData(obs(Map.of("temp", 25.0)), channel, DELIVERY_TAG);
 
         ArgumentCaptor<Instant> startCaptor = ArgumentCaptor.forClass(Instant.class);
         ArgumentCaptor<Instant> stopCaptor = ArgumentCaptor.forClass(Instant.class);
-        verify(obsReader).queryLastAcceptedValues(eq(STATION), startCaptor.capture(), stopCaptor.capture());
-        assertThat(stopCaptor.getValue()).isEqualTo(OBS_TS);
+        verify(obsReader).queryObservedRange(eq(STATION), startCaptor.capture(), stopCaptor.capture());
+        // 上界取「观测时刻-1h」：既排除本条自身，也排除刚刚比较过的近邻样本，
+        // 使基准间隔稳定在 1~2 小时之间，归一化后与 ℃/h 的阈值单位一致
+        assertThat(stopCaptor.getValue()).isEqualTo(OBS_TS.minusSeconds(3600));
         assertThat(startCaptor.getValue()).isEqualTo(OBS_TS.minusSeconds(2 * 3600));
     }
 
@@ -203,7 +218,7 @@ class QcAgentTest {
     @DisplayName("风向不参与时间一致性判定（圆周量差值无意义）")
     void shouldSkipCircularElementInTimeConsistency() throws Exception {
         lenient().when(thresholdService.getThreshold(eq("qc.wind_dir.change.max"), anyDouble())).thenReturn(20.0);
-        when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("wind_dir", 359.0));
+        stubBaseline(Map.of("wind_dir", 359.0));
 
         qcAgent.onRawData(obs(Map.of("wind_dir", 1.0)), channel, DELIVERY_TAG);
 
@@ -275,9 +290,9 @@ class QcAgentTest {
     @DisplayName("尖峰被拒后，紧随其后的正常值不因比较基准被污染而误判")
     void shouldNotCascadeMisjudgementAfterRejectedSpike() throws Exception {
         stubTempThresholds(40.0, -10.0, 5.0);
-        // 基准查询只认 passed/revised，尖峰(-55℃)被极值拒绝后不会成为基准，
-        // 这里模拟基准仍是尖峰之前的正常值 20℃，本条 21℃ 属正常波动
-        when(obsReader.queryLastAcceptedValues(eq(STATION), any(), any())).thenReturn(Map.of("temp", 20.0));
+        // 基准窗口只认 passed/revised，尖峰(-55℃)被极值拒绝后不会成为基准，
+        // 这里模拟基准仍是尖峰之前的正常值 20℃，本条 21℃ 折合 1℃/h，属正常波动
+        stubBaseline(Map.of("temp", 20.0));
 
         ObsData obs = obs(Map.of("temp", 21.0));
 
@@ -326,6 +341,24 @@ class QcAgentTest {
                 .elements(elements)
                 .msgId("msg-qc-1")
                 .build();
+    }
+
+    /**
+     * 打桩：站点自身「若干秒之前」的被接受观测，作为时间一致性的比较基准。
+     * 基准窗口内取最近一条，因此放一条即可。
+     */
+    private void stubBaseline(Map<String, Double> elements, long secondsAgo) {
+        ObsData base = ObsData.builder()
+                .stationCode(STATION)
+                .ts(OBS_TS.minusSeconds(secondsAgo))
+                .elements(elements)
+                .build();
+        lenient().when(obsReader.queryObservedRange(eq(STATION), any(), any())).thenReturn(List.of(base));
+    }
+
+    /** 缺省基准间隔为 1 小时 */
+    private void stubBaseline(Map<String, Double> elements) {
+        stubBaseline(elements, 3600);
     }
 
     private ObsData neighborObs(Map<String, Double> elements) {

@@ -59,7 +59,10 @@ public class QcAgent {
     /** 幂等去重键前缀 */
     private static final String KEY_DEDUP = "meteo:mq:dedup:";
 
-    /** 时间一致性比较基准的回溯窗口（秒） */
+    /** 时间一致性基准的间隔（秒）：阈值单位是「每小时」，故基准必须取 1 小时前的观测 */
+    private static final long CONSISTENCY_BASE_SECONDS = 3600;
+
+    /** 时间一致性基准的回溯上限（秒）：窗口内取不到基准则放弃本轮判定 */
     private static final long CONSISTENCY_LOOKBACK_SECONDS = 2 * 3600;
 
     /** 空间一致性：邻站同时刻匹配容差缺省值（秒） */
@@ -142,32 +145,63 @@ public class QcAgent {
     }
 
     /**
-     * 时间一致性检查：与「最近一个被质控接受的值」的变化量超过 qc.&lt;要素&gt;.change.max 判定可疑。
+     * 时间一致性检查：要素相对「1 小时前的观测」折算成每小时变化率，超过
+     * qc.&lt;要素&gt;.change.max 判定可疑。该阈值的单位由 sys_config 备注约定为「每小时」
+     * （如 qc.temp.change.max = 5 ℃/h、qc.pres.change.max = 6 hPa/h）。
      *
-     * 覆盖全部要素（此前循环里只判了 temp）。未配置阈值的要素取 Double.MAX_VALUE，
-     * 自然不会命中，因此新增要素只需在 sys_config 里补一条阈值。
+     * <p><b>基准为什么必须取 1 小时前，而不是紧邻的上一条观测</b>：
+     * 原实现拿相邻观测直接比较绝对差值，与阈值标称的「每小时」单位不一致——
+     * 采样间隔 15 秒时，把差值折算成每小时会放大 240 倍，检查随之失效两个方向：
+     * 一方面相邻步长被传感器自身节奏限制住（实测气温仅 0.8℃/步），永远够不到阈值，
+     * 一小时累积 14℃ 的漂移可以一路穿过质控；另一方面若真按实际间隔归一化，
+     * ±0.25℃ 的读数噪声折合就是 120℃/h，会变成满屏误报的噪声探测器。
+     * 因此固定 1 小时基准、按实际间隔归一化，才同时满足单位语义与噪声稳健性。
      *
-     * 基准只取 passed/revised：若纳入 raw，紧邻的上一条若是刚被极值检查拒绝的尖峰，
+     * <p>覆盖全部要素。未配置阈值的要素取 Double.MAX_VALUE，自然不会命中，
+     * 因此新增要素只需在 sys_config 里补一条阈值。
+     *
+     * <p>基准只取 passed/revised：若纳入 raw，紧邻的上一条若是刚被极值检查拒绝的尖峰，
      * 本条正常值会被连带误判，每个尖峰污染其后一条正常数据。
      */
     private void checkTimeConsistency(ObsData obs, Map<String, Double> elements, List<String> reasons) {
-        // stop 取观测时刻的整秒：采集 Agent 先写 raw 再投递 MQ，质控处理时该条已入库，
-        // 不设上界的话 last() 取到的就是本条自身，比较值恒等于当前值，检查永不触发
+        // 基准窗口取 [观测时刻-2h, 观测时刻-1h]：上界留出 1 小时，既排除本条自身，
+        // 也排除「刚刚才比较过」的近邻样本，使比对的基准间隔稳定在 1~2 小时之间
         Instant stop = obs.getTs().truncatedTo(ChronoUnit.SECONDS);
-        Map<String, Double> previous = obsReader.queryLastAcceptedValues(obs.getStationCode(),
-                stop.minusSeconds(CONSISTENCY_LOOKBACK_SECONDS), stop);
-        if (previous.isEmpty()) {
+        List<ObsData> window = obsReader.queryObservedRange(obs.getStationCode(),
+                stop.minusSeconds(CONSISTENCY_LOOKBACK_SECONDS),
+                stop.minusSeconds(CONSISTENCY_BASE_SECONDS));
+        if (window.isEmpty()) {
             return;
         }
+
+        ObsData base = null;
+        for (ObsData candidate : window) {
+            if (base == null || candidate.getTs().isAfter(base.getTs())) {
+                base = candidate;
+            }
+        }
+        Map<String, Double> baseline = base.getElements();
+        if (baseline == null) {
+            return;
+        }
+        double hours = (stop.getEpochSecond() - base.getTs().getEpochSecond()) / 3600.0;
+        if (hours <= 0) {
+            return;
+        }
+
         elements.forEach((element, value) -> {
             if (CIRCULAR_ELEMENTS.contains(element)) {
                 return;
             }
-            Double last = previous.get(element);
+            Double last = baseline.get(element);
+            if (last == null) {
+                return;
+            }
             double changeMax = thresholdService.getThreshold("qc." + element + ".change.max", Double.MAX_VALUE);
-            if (last != null && Math.abs(value - last) > changeMax) {
+            double ratePerHour = Math.abs(value - last) / hours;
+            if (ratePerHour > changeMax) {
                 reasons.add("时间一致性[" + element + ": " + last + " → " + value
-                        + ", 变化量超限 " + changeMax + "]");
+                        + ", 折合 " + (Math.round(ratePerHour * 10) / 10.0) + " 每小时，超限 " + changeMax + "]");
             }
         });
     }
