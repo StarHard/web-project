@@ -1,27 +1,46 @@
 package com.campus.meteo.agent.collector;
 
-import com.campus.meteo.influx.ObsData;
-import com.campus.meteo.influx.ObsReader;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 数据模拟器：开发/测试环境模拟多站点传感器上报（直接走采集Agent处理逻辑，等价于收到 MQTT 消息）
- * - 采用「大尺度天气背景 + 站点局地偏差」两层结构：天气系统尺度远大于站间距，
- *   相距十几公里的站点实况应高度相关。早先各站独立随机游走，长时间运行后会漂移到
- *   相差十几度，空间一致性检验（FR-QC-04）上线后立刻被识别为大量可疑数据——
- *   那是数据不真实，不是检验误判
- * - 局地偏差有界（气温 ±2℃ 量级），保证站间差异落在物理合理范围内
- * - 每条数据 5% 概率注入异常尖峰，用于演示质控Agent的极值拦截与人工审核任务
+ * 数据模拟器：开发/测试环境模拟多站点传感器上报（直接走采集 Agent 处理逻辑，等价于收到 MQTT 消息）
+ *
+ * <p><b>物理建模口径（这一版的核心改动）</b>：所有要素都是「时刻的连续函数」，
+ * 而不是「每次调用随机推进一步」。原实现把步长绑在调用次数上——
+ * 采样间隔从默认 60 秒改成开发环境的 15 秒，物理变化速率就跟着快 4 倍，
+ * 同一份参数在两种间隔下不可能都真实（实测出现气温 14℃/小时、气压 11.9 hPa/小时 的跳变）。
+ * 改成时刻的函数之后，采样间隔只影响抽样密度，不影响物理速率。
+ *
+ * <p>具体耦合关系：
+ * <ul>
+ *   <li><b>日变化</b>：气温按正弦（15 时最高、日出前最低）；辐射按太阳高度角的钟形曲线，
+ *       夜间严格为 0；日长与辐射峰值随季节变化。</li>
+ *   <li><b>温湿反相</b>：湿度与气温反相（越热越干），这是真实的日变化特征。</li>
+ *   <li><b>天气过程</b>：一个缓慢的「湿度/扰动」通道同时驱动云量、气压、风速——
+ *       云量高则辐射被削减、气压降低、风速抬升、能见度下降，符合降水天气的物理图景。</li>
+ *   <li><b>降水为间歇事件</b>：由云量超过阈值触发，自然形成「下几小时、停一段」的形态。
+ *       原实现逐条独立掷骰子（12%/条），在小时尺度上退化成「每小时都有雨」。</li>
+ *   <li><b>局地偏差有界</b>：相距十几公里的站点实况应高度相关，偏差幅度控制在物理合理范围内。</li>
+ *   <li><b>重启接续</b>：要素是时刻的函数，重启后天然连续，无需再从库里读最近观测续跑。</li>
+ * </ul>
+ *
+ * <p><b>尖峰注入</b>：仍保留（用于演示质控 Agent 的极值拦截），但限流为每站每小时最多一次。
+ * 原来 5%/条 的频率在 15 秒节奏下等于每天数百条审核任务，会把质控审核队列刷爆。
+ *
  * 开启方式：meteo.simulator.enabled=true；间隔 meteo.simulator.interval-ms（默认60秒）
  */
 @Slf4j
@@ -29,144 +48,280 @@ import java.util.concurrent.ConcurrentHashMap;
 @ConditionalOnProperty(name = "meteo.simulator.enabled", havingValue = "true")
 public class DataSimulator {
 
-    private final CollectorAgent collectorAgent;
-    private final ObsReader obsReader;
-    private final Random random = new Random();
-
-    @Value("${meteo.simulator.interval-ms:60000}")
-    private long intervalMs;
-
-    /** 大尺度天气背景：要素 → 当前值（所有站点共享） */
-    private final Map<String, Double> synoptic = new ConcurrentHashMap<>();
-    /** 站点局地偏差：stationCode → 要素 → 相对天气背景的偏移 */
-    private final Map<String, Map<String, Double>> localOffsets = new ConcurrentHashMap<>();
-    /** 已初始化标记：首轮从库中最近观测续跑，避免重启瞬间产生跳变被时间一致性判为可疑 */
-    private volatile boolean initialized;
+    private static final String[] STATIONS = {"CAMPUS01", "FARM02"};
 
     /**
-     * 要素基线：[下限, 上限, 天气背景每步最大变化]
-     * 说明：降水不参与随机游走，改由下方按「间歇性降水事件」单独生成——
-     * 随机游走会让每个时次都有降水，24h 累计降水将出现数百毫米的荒谬值。
+     * 多尺度波动周期（小时）与权重。叠加后得到平滑、不重复、且**频率与调用次数无关**的天气过程：
+     * 最短 7.3 小时保证「几小时内缓慢演变」，最长 83.3 小时给出「几天一轮的天气过程」。
      */
-    private static final Map<String, double[]> PROFILE = Map.of(
-            "temp", new double[]{15, 35, 0.8},
-            "humi", new double[]{30, 95, 2.0},
-            "pres", new double[]{990, 1030, 0.5},
-            "wind_speed", new double[]{0, 15, 1.5},
-            "wind_dir", new double[]{0, 360, 20},
-            "rad", new double[]{0, 800, 80},
-            "vis", new double[]{3, 30, 2.0},
-            "evap", new double[]{0, 1, 0.1});
+    private static final double[] WAVE_PERIOD_HOURS = {7.3, 19.1, 41.7, 83.3};
+    private static final double[] WAVE_WEIGHTS = {1.0, 0.72, 0.45, 0.30};
 
-    /** 局地偏差幅度上限（相对天气背景），约为天气背景步长的量级 */
-    private static final double LOCAL_OFFSET_RATIO = 2.5;
+    /** 气温年变化：年均 18.5℃、年振幅 11.5℃（1 月约 7℃、7 月约 30℃、9 月约 23℃） */
+    private static final double TEMP_ANNUAL_MEAN = 18.5;
+    private static final double TEMP_ANNUAL_AMPLITUDE = 11.5;
+    /** 气温日变化振幅 ±5℃（日较差约 10℃） */
+    private static final double TEMP_DIURNAL_AMPLITUDE = 5.0;
+    /** 天气过程带来的气温起伏 ±2.5℃；云量对气温的削减（阴天白天升温慢） */
+    private static final double TEMP_SYNOPTIC_AMPLITUDE = 2.5;
+    private static final double TEMP_CLOUD_COOLING = 2.6;
 
-    /** 降水事件发生概率 */
-    private static final double RAIN_PROBABILITY = 0.12;
-    /** 有雨时的雨强区间（mm/h） */
-    private static final double RAIN_MIN = 0.5;
-    private static final double RAIN_MAX = 6.0;
+    private static final double HUMI_BASE = 72.0;
+    private static final double HUMI_DIURNAL_AMPLITUDE = 20.0;
+    private static final double HUMI_SYNOPTIC_AMPLITUDE = 4.0;
+    private static final double HUMI_CLOUD_BOOST = 12.0;
+    /** 起雨之后的额外湿度抬升：真实降雨时相对湿度通常在 85% 以上 */
+    private static final double HUMI_RAIN_BOOST = 10.0;
 
-    public DataSimulator(CollectorAgent collectorAgent, ObsReader obsReader) {
+    private static final double PRES_BASE = 1013.0;
+    private static final double PRES_SYNOPTIC_AMPLITUDE = 7.0;
+
+    private static final double WIND_BASE = 2.6;
+    private static final double WIND_SYNOPTIC_AMPLITUDE = 2.0;
+    private static final double WIND_GUST_AMPLITUDE = 1.6;
+    /** 扰动通道为正时抬升风速（锋面/风暴），使 >10 m/s 偶发而非长期持续 */
+    private static final double WIND_STORM_BOOST = 6.5;
+    private static final double WIND_MAX = 20.0;
+
+    /** 辐射晴天峰值：夏至约 830、冬至约 570 W/m²；云量对辐射的削减（满云保留 20%） */
+    private static final double RAD_PEAK_MEAN = 700.0;
+    private static final double RAD_PEAK_ANNUAL_AMPLITUDE = 130.0;
+    private static final double RAD_CLOUD_ATTENUATION = 0.80;
+
+    /** 日长：夏至约 13.6 小时、冬至约 10.4 小时 */
+    private static final double DAY_LENGTH_MEAN = 12.0;
+    private static final double DAY_LENGTH_AMPLITUDE = 1.6;
+
+    /** 云量超过该阈值才开始降水（区间上限对应约 5.5 mm/h 的最大雨强） */
+    private static final double CLOUD_RAIN_THRESHOLD = 0.72;
+    private static final double RAIN_MAX_INTENSITY = 5.5;
+
+    private static final double WIND_DIR_BASE = 200.0;
+    private static final double WIND_DIR_SYNOPTIC_AMPLITUDE = 28.0;
+
+    private static final double VIS_BASE = 30.0;
+    private static final double VIS_CLOUD_ATTENUATION = 24.0;
+
+    /** 圆周量：风向不做差值类判定，也不参与线性统计 */
+    private static final Set<String> CIRCULAR_ELEMENTS = Set.of("wind_dir");
+
+    /** 每站每小时最多注入一次异常尖峰 */
+    private static final double SPIKE_PROBABILITY_PER_TICK = 0.005;
+
+    /**
+     * 站点局地偏差（相对大尺度天气背景）。幅度有界且恒定：
+     * 农业站略偏暖、湿度略低，与历史演示数据的口径保持一致。
+     */
+    private static final Map<String, Map<String, Double>> STATION_OFFSETS = Map.of(
+            "CAMPUS01", Map.of("temp", 0.0, "humi", 0.0, "pres", 0.0, "wind_speed", -0.3, "wind_dir", -8.0),
+            "FARM02", Map.of("temp", 1.2, "humi", -2.0, "pres", -0.4, "wind_speed", 0.4, "wind_dir", 10.0));
+
+    private final CollectorAgent collectorAgent;
+    private final Random random = new Random();
+
+    /** 通道 → 各周期的相位（由固定种子生成，保证同一通道的波形可复现） */
+    private final Map<String, double[]> channelPhases = new ConcurrentHashMap<>();
+    /** 站点 → 最近注入尖峰的小时序号 */
+    private final Map<String, Long> lastSpikeHour = new ConcurrentHashMap<>();
+
+    public DataSimulator(CollectorAgent collectorAgent) {
         this.collectorAgent = collectorAgent;
-        this.obsReader = obsReader;
     }
 
     @Scheduled(fixedDelayString = "${meteo.simulator.interval-ms:60000}", initialDelay = 5_000)
     public void publish() {
-        if (!initialized) {
-            initState();
-            initialized = true;
-        }
-        stepSynoptic();
-        simulate("CAMPUS01");
-        simulate("FARM02");
-    }
-
-    /** 首轮初始化：优先从库中最近观测续跑，取不到再回落到基线中点 */
-    private void initState() {
-        ObsData latest = null;
-        try {
-            latest = obsReader.queryLatest("CAMPUS01");
-        } catch (Exception e) {
-            log.warn("模拟器读取最近观测失败，使用基线初始化: {}", e.getMessage());
-        }
-        Map<String, Double> seed = latest != null ? latest.getElements() : Map.of();
-        PROFILE.forEach((element, profile) -> {
-            Double stored = seed.get(element);
-            synoptic.put(element, stored != null
-                    ? clamp(stored, profile[0], profile[1])
-                    : profile[0] + (profile[1] - profile[0]) / 2);
-        });
-        log.info("模拟器状态已初始化: 来源={}", latest != null ? "库中最近观测" : "基线中点");
-    }
-
-    /** 推进大尺度天气背景（所有站点共享同一次游走） */
-    private void stepSynoptic() {
-        synoptic.forEach((element, value) -> {
-            double[] profile = PROFILE.get(element);
-            if (profile != null) {
-                double delta = (random.nextDouble() * 2 - 1) * profile[2];
-                synoptic.put(element, clamp(value + delta, profile[0], profile[1]));
+        long now = System.currentTimeMillis();
+        for (String stationCode : STATIONS) {
+            Map<String, Double> elements = computeElements(stationCode, now);
+            String payload = """
+                    {"stationCode":"%s","ts":%d,"elements":{
+                    "temp":%.1f,"humi":%.1f,"pres":%.1f,"wind_speed":%.1f,"wind_dir":%.0f,
+                    "rain":%.1f,"rad":%.1f,"vis":%.1f,"evap":%.2f}}
+                    """.formatted(stationCode, now,
+                    elements.get("temp"), elements.get("humi"), elements.get("pres"),
+                    elements.get("wind_speed"), elements.get("wind_dir"), elements.get("rain"),
+                    elements.get("rad"), elements.get("vis"), elements.get("evap"));
+            try {
+                MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
+                message.setQos(1);
+                collectorAgent.processMessage("meteo/" + stationCode + "/up", message);
+            } catch (Exception e) {
+                log.error("模拟器上报失败: station={}, err={}", stationCode, e.getMessage());
             }
-        });
-    }
-
-    private void simulate(String stationCode) {
-        Map<String, Double> offsets = localOffsets.computeIfAbsent(stationCode, k -> initOffsets());
-        Map<String, Double> next = new ConcurrentHashMap<>();
-
-        // 天气背景 + 有界局地偏差
-        synoptic.forEach((element, base) -> {
-            double[] profile = PROFILE.get(element);
-            double offset = offsets.getOrDefault(element, 0.0);
-            double bound = profile[2] * LOCAL_OFFSET_RATIO;
-            double nextOffset = clamp(offset + (random.nextDouble() * 2 - 1) * profile[2] * 0.5,
-                    -bound, bound);
-            offsets.put(element, nextOffset);
-            next.put(element, clamp(base + nextOffset, profile[0], profile[1]));
-        });
-
-        // 5% 概率注入气温异常尖峰（-50℃ 超出极值下限，演示质控拦截）
-        if (random.nextInt(100) < 5) {
-            double spike = -50 - random.nextDouble() * 10;
-            next.put("temp", spike);
-            log.info("模拟器注入异常气温尖峰: station={}, value={}", stationCode, spike);
-        }
-        // 降水：间歇性事件，单位为雨强 mm/h，多数时次为 0
-        next.put("rain", random.nextDouble() < RAIN_PROBABILITY
-                ? Math.round((RAIN_MIN + random.nextDouble() * (RAIN_MAX - RAIN_MIN)) * 10) / 10.0
-                : 0.0);
-
-        String payload = """
-                {"stationCode":"%s","ts":%d,"elements":{
-                "temp":%.1f,"humi":%.1f,"pres":%.1f,"wind_speed":%.1f,"wind_dir":%.0f,
-                "rain":%.1f,"rad":%.1f,"vis":%.1f,"evap":%.2f}}
-                """.formatted(stationCode, System.currentTimeMillis(),
-                next.get("temp"), next.get("humi"), next.get("pres"),
-                next.get("wind_speed"), next.get("wind_dir"), next.get("rain"),
-                next.get("rad"), next.get("vis"), next.get("evap"));
-        try {
-            MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
-            message.setQos(1);
-            collectorAgent.processMessage("meteo/" + stationCode + "/up", message);
-            log.debug("模拟器已上报: station={}", stationCode);
-        } catch (Exception e) {
-            log.error("模拟器上报失败: station={}, err={}", stationCode, e.getMessage());
         }
     }
 
-    /** 局地偏差初值：小幅随机，使两站初始即略有差异而非完全一致 */
-    private Map<String, Double> initOffsets() {
-        Map<String, Double> offsets = new ConcurrentHashMap<>();
-        PROFILE.forEach((element, profile) -> {
-            double bound = profile[2] * LOCAL_OFFSET_RATIO;
-            offsets.put(element, (random.nextDouble() * 2 - 1) * bound * 0.5);
-        });
-        return offsets;
+    /**
+     * 纯函数：给定站点与时刻，算出该时刻的观测要素。
+     *
+     * <p>抽成无副作用的方法是为了可单测——物理合理性断言不需要起 Spring、不需要 MQTT、
+     * 也不需要真等上一整天，直接用不同时刻调用即可。
+     */
+    Map<String, Double> computeElements(String stationCode, long epochMillis) {
+        LocalDateTime local = LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault());
+        double hourOfDay = local.getHour() + local.getMinute() / 60.0;
+        double monthIndex = local.getMonthValue() - 1;
+
+        // 季节相位：夏至（6 月下旬）取峰值
+        double seasonal = Math.sin(2 * Math.PI * (monthIndex - 3.3) / 12);
+        // 日变化相位：15 时取峰值
+        double diurnal = 2 * Math.PI * (hourOfDay - 9) / 24;
+
+        // 天气过程通道：同一个「扰动强度」驱动云量、气压与风速，保证三者物理上同源
+        double wet = slowWave("wet", epochMillis);
+        double cloud = clamp(0.5 + 0.62 * wet, 0.0, 1.0);
+        // 降水强度因子（0~1）：云量超过阈值后才起雨。同时用于湿度的额外抬升，
+        // 保证「有雨时湿度明显更高」这条物理关系成立，而不是只与云量弱相关
+        double rainFactor = Math.max(0.0, cloud - CLOUD_RAIN_THRESHOLD) / (1.0 - CLOUD_RAIN_THRESHOLD);
+        double rain = rainFactor > 0.0 ? round1(0.3 + rainFactor * RAIN_MAX_INTENSITY) : 0.0;
+
+        double tempOffset = stationOffset(stationCode, "temp");
+        double temp = TEMP_ANNUAL_MEAN + TEMP_ANNUAL_AMPLITUDE * seasonal
+                + TEMP_DIURNAL_AMPLITUDE * Math.sin(diurnal)
+                + TEMP_SYNOPTIC_AMPLITUDE * slowWave("temp", epochMillis)
+                - TEMP_CLOUD_COOLING * cloud
+                + tempOffset + noise(0.25);
+        temp = clamp(temp, -40.0, 50.0);
+
+        double humi = HUMI_BASE - HUMI_DIURNAL_AMPLITUDE * Math.sin(diurnal)
+                + HUMI_SYNOPTIC_AMPLITUDE * slowWave("humi", epochMillis)
+                + HUMI_CLOUD_BOOST * cloud
+                + HUMI_RAIN_BOOST * rainFactor
+                + stationOffset(stationCode, "humi") + noise(1.5);
+        humi = clamp(humi, 15.0, 100.0);
+
+        // 气压与云量同源反相：云量高（降水天气）对应低压。
+        // 只取长周期分量：气压在数小时内应缓慢变化（真实约 1~3 hPa/小时），不能被小时级波动带快
+        double pres = PRES_BASE - PRES_SYNOPTIC_AMPLITUDE * slowWaveSlow("pres", epochMillis)
+                + stationOffset(stationCode, "pres") + noise(0.3);
+
+        double windSpeed = WIND_BASE
+                + WIND_SYNOPTIC_AMPLITUDE * slowWave("wind", epochMillis)
+                + WIND_GUST_AMPLITUDE * slowWave("gust", epochMillis)
+                + WIND_STORM_BOOST * Math.max(0.0, wet)
+                + stationOffset(stationCode, "wind_speed") + noise(0.4);
+        windSpeed = clamp(windSpeed, 0.0, WIND_MAX);
+
+        double windDir = normalizeDegrees(WIND_DIR_BASE
+                + WIND_DIR_SYNOPTIC_AMPLITUDE * wet
+                + 14.0 * slowWave("dir", epochMillis)
+                + stationOffset(stationCode, "wind_dir"));
+
+        // 辐射：夜间严格为 0（不叠噪声，否则会凭空出现非零辐射），白天按太阳高度角取钟形曲线
+        double dayLength = DAY_LENGTH_MEAN + DAY_LENGTH_AMPLITUDE * seasonal;
+        double sunrise = 12.0 - dayLength / 2.0;
+        double sunset = 12.0 + dayLength / 2.0;
+        double radPeak = RAD_PEAK_MEAN + RAD_PEAK_ANNUAL_AMPLITUDE * seasonal;
+        double radClear = 0.0;
+        if (hourOfDay >= sunrise && hourOfDay <= sunset) {
+            radClear = radPeak * Math.sin(Math.PI * (hourOfDay - sunrise) / dayLength);
+        }
+        double rad = radClear <= 0.0
+                ? 0.0
+                : Math.max(0.0, radClear * (1.0 - RAD_CLOUD_ATTENUATION * cloud) * (1.0 + noise(0.03)));
+
+        double vis = clamp(VIS_BASE - VIS_CLOUD_ATTENUATION * cloud + noise(1.0), 1.0, 40.0);
+
+        // 蒸发与辐射同向：夜间无辐射则蒸发接近 0
+        double evap = clamp(0.10 + 0.55 * (radClear / RAD_PEAK_MEAN) - 0.25 * cloud + noise(0.03), 0.0, 2.0);
+
+        Map<String, Double> elements = new LinkedHashMap<>();
+        elements.put("temp", round1(temp));
+        elements.put("humi", round1(humi));
+        elements.put("pres", round1(pres));
+        elements.put("wind_speed", round1(windSpeed));
+        elements.put("wind_dir", normalizeDegrees(round1(windDir)));
+        elements.put("rain", rain);
+        elements.put("rad", round1(rad));
+        elements.put("vis", round1(vis));
+        elements.put("evap", round2(evap));
+
+        maybeInjectSpike(stationCode, elements, epochMillis);
+        return elements;
     }
 
-    private double clamp(double v, double min, double max) {
-        return Math.max(min, Math.min(max, v));
+    /**
+     * 多尺度正弦叠加的缓慢波动，取值约落在 [-1, 1]（实际多在 ±0.7）。
+     *
+     * <p>相位由「通道名 + 固定种子」决定：同一通道每次调用得到相同波形，
+     * 不同通道互不相关，因此各要素既平滑又不互相绑死。
+     */
+    private double slowWave(String channel, long epochMillis) {
+        return slowWave(channel, epochMillis, 0);
+    }
+
+    /**
+     * 只取长周期分量（41.7h / 83.3h）。
+     *
+     * <p>气压这类要素必须用它：真实气压在数小时内只变化 1~3 hPa，
+     * 若混入 7.3 小时周期分量，小时变化率会被放大到不真实、并撞上质控阈值。
+     */
+    private double slowWaveSlow(String channel, long epochMillis) {
+        return slowWave(channel, epochMillis, 2);
+    }
+
+    private double slowWave(String channel, long epochMillis, int fromIndex) {
+        double[] phases = channelPhases.computeIfAbsent(channel, key -> {
+            Random seeded = new Random(1_000L + key.hashCode());
+            double[] result = new double[WAVE_PERIOD_HOURS.length];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = seeded.nextDouble() * 2 * Math.PI;
+            }
+            return result;
+        });
+        double hours = epochMillis / 3_600_000.0;
+        double sum = 0.0;
+        double weightSum = 0.0;
+        for (int i = fromIndex; i < WAVE_PERIOD_HOURS.length; i++) {
+            sum += WAVE_WEIGHTS[i] * Math.sin(2 * Math.PI * hours / WAVE_PERIOD_HOURS[i] + phases[i]);
+            weightSum += WAVE_WEIGHTS[i];
+        }
+        return weightSum == 0 ? 0.0 : sum / weightSum;
+    }
+
+    private double stationOffset(String stationCode, String element) {
+        Map<String, Double> offsets = STATION_OFFSETS.get(stationCode);
+        return offsets == null ? 0.0 : offsets.getOrDefault(element, 0.0);
+    }
+
+    private double noise(double amplitude) {
+        return (random.nextDouble() * 2 - 1) * amplitude;
+    }
+
+    /**
+     * 注入异常气温尖峰，用于演示质控的极值拦截与人工审核任务。
+     * 限流为每站每小时最多一次：原来的 5%/条 在 15 秒节奏下等于每天数百条审核任务。
+     */
+    private void maybeInjectSpike(String stationCode, Map<String, Double> elements, long epochMillis) {
+        long currentHour = epochMillis / 3_600_000L;
+        Long lastHour = lastSpikeHour.get(stationCode);
+        if (lastHour != null && lastHour == currentHour) {
+            return;
+        }
+        if (random.nextDouble() >= SPIKE_PROBABILITY_PER_TICK) {
+            return;
+        }
+        lastSpikeHour.put(stationCode, currentHour);
+        double spike = -50 - random.nextDouble() * 10;
+        elements.put("temp", round1(spike));
+        log.info("模拟器注入异常气温尖峰: station={}, value={}", stationCode, spike);
+    }
+
+    /** 风向归一化到 [0, 360)：圆周量不能只做上下界截断，否则会在 0/360 处堆积 */
+    private double normalizeDegrees(double degrees) {
+        double result = degrees % 360.0;
+        return result < 0 ? result + 360.0 : result;
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private double round1(double value) {
+        return Math.round(value * 10) / 10.0;
+    }
+
+    private double round2(double value) {
+        return Math.round(value * 100) / 100.0;
     }
 }
