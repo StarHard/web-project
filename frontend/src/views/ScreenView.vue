@@ -2,11 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
-import { BorderBox1, Decoration5, DigitalFlop, ScrollBoard } from '@kjgl77/datav-vue3'
+import { DigitalFlop, ScrollBoard } from '@kjgl77/datav-vue3'
 import '@kjgl77/datav-vue3/dist/style.css'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { sparseSymbolStyle } from '@/utils/chart'
+import { AXIS_COLORS, SERIES_COLORS, sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, realtimeCurve, stationMap, type Station, type StationMapPoint } from '@/api/monitor'
 import { alertStat, pageAlerts, type AlertRecord } from '@/api/alert'
 import {
@@ -36,11 +36,10 @@ function updateScale(): void {
   scale.value = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT)
 }
 
-/** DataV 边框配色常量，避免内联数组在每次渲染时重建 */
-const COLOR_CYAN = ['#22d3ee', '#3b82f6']
-const COLOR_WARN = ['#f59e0b', '#ef4444']
+/** 读数用中性色：与后台 .readout-value 同色。颜色留给告警等级编码，不在这里做装饰 */
+const READOUT_COLOR = '#dfe3e9'
 
-/** 大屏为固定画布（1080 高），面板高度按可用空间算好，避免 flex 撑不开导致 DataV 组件测到 0 高度 */
+/** 大屏为固定画布（1080 高），面板高度按可用空间算好，避免 flex 撑不开导致图表组件测到 0 高度 */
 const PANEL_HEIGHT = {
   metrics: 340,
   stations: 594,
@@ -86,33 +85,32 @@ const onlineCount = computed(() => mapPoints.value.filter((item) => item.onlineF
 const alertingCount = computed(() => mapPoints.value.filter((item) => item.alertLevel > 0).length)
 
 const trendOption = computed<EChartsOption>(() => {
-  const palette = ['#22d3ee', '#a78bfa', '#f59e0b', '#34d399']
   const series = Object.entries(curves.value).map(([stationCode, points], index) => ({
     name: stations.value.find((item) => item.stationCode === stationCode)?.name ?? stationCode,
     type: 'line' as const,
     smooth: true,
     ...sparseSymbolStyle(points.length),
     data: points.map((point) => [point.ts, point.elements?.temp ?? null]),
-    lineStyle: { width: 2, color: palette[index % palette.length] },
-    itemStyle: { color: palette[index % palette.length] }
+    lineStyle: { width: 2, color: SERIES_COLORS[index % SERIES_COLORS.length] },
+    itemStyle: { color: SERIES_COLORS[index % SERIES_COLORS.length] }
   }))
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    legend: { textStyle: { color: '#8ba0bf' }, top: 0, icon: 'roundRect' },
+    legend: { textStyle: { color: AXIS_COLORS.label }, top: 0, icon: 'roundRect' },
     grid: { left: 52, right: 24, top: 40, bottom: 40 },
     xAxis: {
       type: 'time',
-      axisLine: { lineStyle: { color: '#1f2f4a' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 },
+      axisLine: { lineStyle: { color: AXIS_COLORS.line } },
+      axisLabel: { color: AXIS_COLORS.label, fontSize: 11 },
       splitLine: { show: false }
     },
     yAxis: {
       type: 'value',
       name: '℃',
-      nameTextStyle: { color: '#8ba0bf' },
-      splitLine: { lineStyle: { color: '#152238' } },
-      axisLabel: { color: '#8ba0bf', fontSize: 11 }
+      nameTextStyle: { color: AXIS_COLORS.label },
+      splitLine: { lineStyle: { color: AXIS_COLORS.split } },
+      axisLabel: { color: AXIS_COLORS.label, fontSize: 11 }
     },
     series
   }
@@ -125,35 +123,23 @@ const rainOption = computed<EChartsOption>(() => ({
   xAxis: {
     type: 'category',
     data: rainRanking.value.map((item) => item.name),
-    axisLine: { lineStyle: { color: '#1f2f4a' } },
-    axisLabel: { color: '#8ba0bf', fontSize: 11, interval: 0, rotate: 12 }
+    axisLine: { lineStyle: { color: AXIS_COLORS.line } },
+    axisLabel: { color: AXIS_COLORS.label, fontSize: 11, interval: 0, rotate: 12 }
   },
   yAxis: {
     type: 'value',
     name: 'mm',
-    nameTextStyle: { color: '#8ba0bf' },
-    splitLine: { lineStyle: { color: '#152238' } },
-    axisLabel: { color: '#8ba0bf', fontSize: 11 }
+    nameTextStyle: { color: AXIS_COLORS.label },
+    splitLine: { lineStyle: { color: AXIS_COLORS.split } },
+    axisLabel: { color: AXIS_COLORS.label, fontSize: 11 }
   },
   series: [
     {
       type: 'bar',
       barMaxWidth: 28,
       data: rainRanking.value.map((item) => item.value),
-      itemStyle: {
-        borderRadius: [4, 4, 0, 0],
-        color: {
-          type: 'linear',
-          x: 0,
-          y: 0,
-          x2: 0,
-          y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(34,211,238,0.9)' },
-            { offset: 1, color: 'rgba(34,211,238,0.15)' }
-          ]
-        }
-      }
+      // 纯色柱：渐变填充只增加装饰，不承载任何信息
+      itemStyle: { color: '#4a7ea8', borderRadius: [3, 3, 0, 0] }
     }
   ]
 }))
@@ -166,8 +152,8 @@ const levelOption = computed<EChartsOption>(() => ({
       type: 'pie',
       radius: ['48%', '70%'],
       center: ['50%', '52%'],
-      label: { color: '#8ba0bf', fontSize: 12, formatter: '{b}\n{c}' },
-      itemStyle: { borderColor: '#06101f', borderWidth: 2 },
+      label: { color: AXIS_COLORS.label, fontSize: 12, formatter: '{b}\n{c}' },
+      itemStyle: { borderColor: '#17191f', borderWidth: 2 },
       data: [1, 2, 3, 4].map((level) => ({
         name: ALERT_LEVEL_LABELS[level],
         value: levelCount.value[String(level)] ?? 0,
@@ -177,14 +163,14 @@ const levelOption = computed<EChartsOption>(() => ({
   ]
 }))
 
-function flopConfig(value: number | null, unit: string, color: string) {
+function flopConfig(value: number | null, unit: string) {
   return {
     number: [value ?? 0],
     content: `{nt}${unit}`,
     toFixed: 1,
     style: {
       fontSize: 34,
-      fill: color,
+      fill: READOUT_COLOR,
       // 读数走等宽字体；℃ 等符号等宽字体缺失，回退到中文字体承接
       fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Noto Sans SC', monospace"
     }
@@ -215,8 +201,9 @@ const alertBoardConfig = computed(() => ({
     formatTime(item.alertTime).slice(-5)
   ]),
   rowNum: 6,
-  headerBGC: 'rgba(34,211,238,0.12)',
-  oddRowBGC: 'rgba(255,255,255,0.02)',
+  // 榜单配色对齐系统：表头用钢蓝淡染，斑马纹用中性提亮，不再用青色霓虹
+  headerBGC: 'rgba(74,126,168,0.18)',
+  oddRowBGC: 'rgba(255,255,255,0.03)',
   evenRowBGC: 'transparent',
   headerHeight: 38,
   columnWidth: [120, 50, 195, 60],
@@ -279,44 +266,37 @@ onBeforeUnmount(() => {
   <div class="screen-viewport">
     <div class="screen-canvas" :style="{ transform: `scale(${scale})` }">
       <div class="screen">
-      <header class="screen-header">
-        <Decoration5 :color="['#22d3ee', '#3b82f6']" :dur="3" class="header-deco" />
-        <div class="header-center">
+        <header class="screen-header">
           <h1>校园智能气象服务系统</h1>
           <p>实时监测大屏 · {{ clock }}</p>
-        </div>
-        <Decoration5 :color="['#3b82f6', '#22d3ee']" :dur="3" class="header-deco" />
-        <button class="exit-btn" @click="router.push('/dashboard')">退出大屏</button>
-      </header>
+          <button class="exit-btn" @click="router.push('/dashboard')">退出大屏</button>
+        </header>
 
-      <main class="screen-body">
-        <section class="col col-left">
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.metrics + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+        <main class="screen-body">
+          <section class="col col-left">
+            <section class="box" :style="{ height: PANEL_HEIGHT.metrics + 'px' }">
               <div class="box-head">全网实时指标</div>
               <div class="metrics">
                 <div class="metric">
                   <span class="metric-name">气温</span>
-                  <DigitalFlop :config="flopConfig(averages.temp, '℃', '#22d3ee')" />
+                  <DigitalFlop :config="flopConfig(averages.temp, '℃')" />
                 </div>
                 <div class="metric">
                   <span class="metric-name">湿度</span>
-                  <DigitalFlop :config="flopConfig(averages.humi, '%', '#a78bfa')" />
+                  <DigitalFlop :config="flopConfig(averages.humi, '%')" />
                 </div>
                 <div class="metric">
                   <span class="metric-name">风速</span>
-                  <DigitalFlop :config="flopConfig(averages.wind_speed, 'm/s', '#34d399')" />
+                  <DigitalFlop :config="flopConfig(averages.wind_speed, 'm/s')" />
                 </div>
                 <div class="metric">
                   <span class="metric-name">雨强</span>
-                  <DigitalFlop :config="flopConfig(averages.rain, 'mm/h', '#f59e0b')" />
+                  <DigitalFlop :config="flopConfig(averages.rain, 'mm/h')" />
                 </div>
               </div>
-            </div>
-          </BorderBox1>
+            </section>
 
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.stations + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+            <section class="box" :style="{ height: PANEL_HEIGHT.stations + 'px' }">
               <div class="box-head">
                 站点状态
                 <span class="box-tag">在线 {{ onlineCount }}/{{ mapPoints.length }}</span>
@@ -331,33 +311,27 @@ onBeforeUnmount(() => {
                   <span v-else class="station-idle">{{ point.stationCode }}</span>
                 </li>
               </ul>
-            </div>
-          </BorderBox1>
-        </section>
+            </section>
+          </section>
 
-        <section class="col col-center">
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.trend + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+          <section class="col col-center">
+            <section class="box" :style="{ height: PANEL_HEIGHT.trend + 'px' }">
               <div class="box-head">多站点气温趋势（近 24h · 小时均值）</div>
               <div class="chart-area">
                 <AppChart v-if="Object.keys(curves).length" :option="trendOption" height="100%" />
               </div>
-            </div>
-          </BorderBox1>
+            </section>
 
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.rain + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+            <section class="box" :style="{ height: PANEL_HEIGHT.rain + 'px' }">
               <div class="box-head">各站点累计降水（近 24h）</div>
               <div class="chart-area">
                 <AppChart v-if="rainRanking.length" :option="rainOption" height="100%" />
               </div>
-            </div>
-          </BorderBox1>
-        </section>
+            </section>
+          </section>
 
-        <section class="col col-right">
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.alerts + 'px' }" :color="COLOR_WARN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+          <section class="col col-right">
+            <section class="box" :style="{ height: PANEL_HEIGHT.alerts + 'px' }">
               <div class="box-head">
                 进行中告警
                 <span class="box-tag warn">{{ alertingCount }} 个站点告警中</span>
@@ -366,20 +340,17 @@ onBeforeUnmount(() => {
                 <ScrollBoard v-if="alerts.length" :config="alertBoardConfig" class="board" />
                 <div v-else class="board-empty"><EmptyState compact icon="check" title="当前无进行中告警" /></div>
               </div>
-            </div>
-          </BorderBox1>
+            </section>
 
-          <BorderBox1 class="box" :style="{ height: PANEL_HEIGHT.levels + 'px' }" :color="COLOR_CYAN" background-color="rgba(8,20,38,0.6)">
-            <div class="box-inner">
+            <section class="box" :style="{ height: PANEL_HEIGHT.levels + 'px' }">
               <div class="box-head">告警等级分布</div>
               <div class="chart-area">
                 <AppChart :option="levelOption" height="100%" />
               </div>
-            </div>
-          </BorderBox1>
-        </section>
-      </main>
-    </div>
+            </section>
+          </section>
+        </main>
+      </div>
     </div>
   </div>
 </template>
@@ -389,7 +360,7 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #06101f;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -401,70 +372,68 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+/* 大屏沿用后台的仪器面板语言，只把尺寸放大：同一套中性底、钢蓝强调色、小圆角。
+   DataV 的发光边框、对称装饰条与背景光晕此前只制造噪声，不承载任何信息，已移除。 */
 .screen {
   width: 1920px;
   height: 1080px;
   display: flex;
   flex-direction: column;
-  padding: 14px 20px 20px;
-  background: radial-gradient(1200px 700px at 50% -10%, rgba(59, 130, 246, 0.16), transparent), #06101f;
-  color: #e8eefb;
+  padding: 14px 22px 20px;
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-sans);
   /* 大屏数字最大、刷新最频繁，全局启用等宽数字，避免每秒刷新时数字宽度跳动 */
   font-variant-numeric: tabular-nums;
   overflow: hidden;
 }
 
+/* 高 82 + 下边距 14 = 96，与 padding 14/20 合计让 .screen-body 恰好为 950px，
+   与 PANEL_HEIGHT 三列总和（340+594、467+467、534+400 各加 16 间距）严格相等 */
 .screen-header {
   position: relative;
-  height: 90px;
+  height: 82px;
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
 }
 
-.header-deco {
-  width: 320px;
-  height: 42px;
-}
-
-.header-center {
-  text-align: center;
-  padding: 0 32px;
-}
-
-.header-center h1 {
+.screen-header h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 600;
-  letter-spacing: 4px;
-  color: #e8eefb;
+  letter-spacing: 2px;
+  color: var(--text);
 }
 
-.header-center p {
+.screen-header p {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #8ba0bf;
-  letter-spacing: 2px;
+  color: var(--text-muted);
 }
 
 .exit-btn {
   position: absolute;
   right: 0;
-  top: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   padding: 6px 14px;
   font-size: 12px;
-  color: #8ba0bf;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-control);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .exit-btn:hover {
-  color: #22d3ee;
-  border-color: #22d3ee;
+  color: var(--text);
+  border-color: var(--primary);
 }
 
 .screen-body {
@@ -472,7 +441,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   gap: 16px;
-  padding-top: 6px;
 }
 
 .col {
@@ -497,16 +465,16 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+/* 面板与后台 .panel 同款：1px 边框 + 小圆角 + 面板底，只是尺寸更大。
+   早期用 DataV BorderBox1 承载发光边角，必须再套一层 .box-inner 才能撑出内容高度，现一并简化。 */
 .box {
   min-height: 0;
-}
-
-/* 面板内层承载 padding 与 flex 布局：直接作用在 DataV 根元素上会让其内容区测不到高度 */
-.box-inner {
-  height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 42px 16px 14px;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   overflow: hidden;
 }
 
@@ -522,43 +490,55 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 14px;
-  letter-spacing: 1px;
-  color: #cfe0f7;
+  color: var(--text);
   margin-bottom: 10px;
 }
 
 .box-tag {
   font-size: 12px;
-  color: #7dd3fc;
+  color: var(--accent);
   padding: 1px 10px;
   border-radius: var(--radius-pill);
-  background: rgba(34, 211, 238, 0.12);
+  background: rgba(74, 126, 168, 0.18);
+  border: 1px solid rgba(74, 126, 168, 0.32);
 }
 
 .box-tag.warn {
-  color: #fbbf24;
-  background: rgba(245, 158, 11, 0.14);
+  color: #e0b45c;
+  background: rgba(217, 154, 43, 0.14);
+  border-color: rgba(217, 154, 43, 0.32);
 }
 
+/* 指标区用分隔线而非四张独立卡片：边框与底色少一层，读数本身才是主体 */
 .metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
 }
 
 .metric {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: var(--radius-surface);
-  border: 1px solid rgba(34, 211, 238, 0.12);
+  padding: 8px 0 8px 16px;
+  border-left: 1px solid var(--border);
+}
+
+/* 竖线是列分隔而非卡片边框，左列不画 */
+.metric:nth-child(odd) {
+  border-left: none;
+  padding-left: 0;
+}
+
+.metric:nth-child(n + 3) {
+  border-top: 1px solid var(--border);
 }
 
 .metric-name {
   font-size: 12px;
-  color: #8ba0bf;
+  color: var(--text-muted);
 }
 
 .station-list {
@@ -575,7 +555,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 9px 4px;
-  border-bottom: 1px solid rgba(34, 211, 238, 0.08);
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
@@ -588,20 +568,20 @@ onBeforeUnmount(() => {
 
 .station-idle {
   font-size: 12px;
-  color: #5f7a9c;
+  color: var(--text-dim);
 }
 
 .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #64748b;
+  background: var(--text-dim);
   flex-shrink: 0;
 }
 
+/* 在线态不发光：状态用颜色编码即可，光晕只是装饰 */
 .dot.on {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+  background: var(--success);
 }
 
 .board {
@@ -613,7 +593,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: grid;
   place-items: center;
-  color: #5f7a9c;
+  color: var(--text-dim);
   font-size: 13px;
 }
 </style>

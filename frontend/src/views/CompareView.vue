@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { EChartsOption } from 'echarts'
 import AppChart from '@/components/AppChart.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { sparseSymbolStyle } from '@/utils/chart'
+import { SERIES_COLORS, sparseSymbolStyle } from '@/utils/chart'
 import { pageStations, realtimeCompare, type CompareResp, type Station } from '@/api/monitor'
 import { ELEMENT_UNITS, elementLabel, formatElementValue, formatTime } from '@/utils/format'
 import { useFilters } from '@/utils/filters'
@@ -13,9 +13,6 @@ const ELEMENT_OPTIONS = ['temp', 'humi', 'pres', 'wind_speed', 'rain', 'rad']
 
 /** 单次对比站点上限，与后端 RealtimeServiceImpl.MAX_STATIONS 保持一致 */
 const MAX_STATIONS = 6
-
-/** 多站曲线配色：同明度不同色相，保证深色底可辨识且不依赖颜色区分告警语义 */
-const SERIES_COLORS = ['#6f9dc4', '#c98b4b', '#5fae8a', '#a880c0', '#c96b6b', '#8a9ab5']
 
 const stations = ref<Station[]>([])
 const result = ref<CompareResp | null>(null)
