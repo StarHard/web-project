@@ -13,7 +13,7 @@
   长时间冻结、审核队列被垃圾任务刷满。因此需要把旧数据整体清掉、重新灌入。
 
   清空后只需重启后端（scripts\start-all.ps1）：后端启动时会用与实时相同的物理模型
-  自动回填 7 天逐小时历史观测（见 DataSimulator.backfillHistoryIfEmpty），
+  自动补齐 7 天内缺失的逐小时历史观测（见 DataSimulator.backfillHistoryGaps），
   不再需要单独的灌数脚本。
 
 .PARAMETER Force

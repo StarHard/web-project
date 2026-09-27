@@ -11,9 +11,12 @@ import org.mockito.ArgumentCaptor;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -327,10 +330,10 @@ class DataSimulatorTest {
     void backfillsHistoryWithSameModel() {
         ObsWriter writer = mock(ObsWriter.class);
         ObsReader reader = mock(ObsReader.class);
-        when(reader.queryObservedRange(anyString(), any(), any())).thenReturn(List.of());
+        when(reader.queryOccupiedTimestamps(anyString(), any(), any())).thenReturn(Set.of());
         DataSimulator instance = simulatorWith(writer, reader, 7);
 
-        instance.backfillHistoryIfEmpty();
+        instance.backfillHistoryGaps();
 
         ArgumentCaptor<ObsData> captor = ArgumentCaptor.forClass(ObsData.class);
         // 7 天逐小时、两端闭合 → 每站 169 条，两站共 338 条
@@ -351,18 +354,56 @@ class DataSimulatorTest {
                 "回填湿度与同刻实时模型应一致（仅抖动范围内）");
     }
 
+    /** 回填窗口内的整点序列：末端为「当前整点的前 1 小时」，往前推 days 天，两端闭合 */
+    private List<Instant> hourlySlots(int days) {
+        Instant to = Instant.now().truncatedTo(ChronoUnit.HOURS).minus(1, ChronoUnit.HOURS);
+        Instant from = to.minus(days, ChronoUnit.DAYS);
+        List<Instant> slots = new ArrayList<>();
+        for (Instant ts = from; !ts.isAfter(to); ts = ts.plus(1, ChronoUnit.HOURS)) {
+            slots.add(ts);
+        }
+        return slots;
+    }
+
     @Test
-    @DisplayName("历史已存在时不重复回填")
-    void skipsBackfillWhenHistoryExists() {
+    @DisplayName("历史完整（7 天整点齐全）时不重复回填")
+    void skipsBackfillWhenHistoryComplete() {
         ObsWriter writer = mock(ObsWriter.class);
         ObsReader reader = mock(ObsReader.class);
-        when(reader.queryObservedRange(anyString(), any(), any())).thenReturn(List.of(
-                ObsData.builder().stationCode("CAMPUS01").ts(Instant.now()).elements(Map.of("temp", 20.0)).build()));
+        when(reader.queryOccupiedTimestamps(anyString(), any(), any()))
+                .thenReturn(new HashSet<>(hourlySlots(7)));
         DataSimulator instance = simulatorWith(writer, reader, 7);
 
-        instance.backfillHistoryIfEmpty();
+        instance.backfillHistoryGaps();
 
         verify(writer, never()).writeObs(any());
+
+        // 末端整点必须落在查询区间内：Flux 的 range(stop:) 是开区间，
+        // stop 若正好等于末端整点，该整点查不出来，每次启动都会把它当成缺失重写一遍
+        ArgumentCaptor<Instant> stopCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(reader, times(2)).queryOccupiedTimestamps(anyString(), any(), stopCaptor.capture());
+        Instant windowEnd = Instant.now().truncatedTo(ChronoUnit.HOURS).minus(1, ChronoUnit.HOURS);
+        assertTrue(stopCaptor.getAllValues().stream().allMatch(stop -> stop.isAfter(windowEnd)),
+                "缺口查询的末端应越过末端整点，实际 " + stopCaptor.getAllValues());
+    }
+
+    @Test
+    @DisplayName("停机留下的空洞按整点逐时补齐，已有观测的时次不重写")
+    void fillsOnlyMissingHours() {
+        ObsWriter writer = mock(ObsWriter.class);
+        ObsReader reader = mock(ObsReader.class);
+        // 169 个整点里只有 1 个已有观测（该小时设备正常上报），其余都是停机造成的空洞
+        Instant occupiedTs = hourlySlots(7).get(5);
+        when(reader.queryOccupiedTimestamps(anyString(), any(), any())).thenReturn(Set.of(occupiedTs));
+        DataSimulator instance = simulatorWith(writer, reader, 7);
+
+        instance.backfillHistoryGaps();
+
+        ArgumentCaptor<ObsData> captor = ArgumentCaptor.forClass(ObsData.class);
+        // 每站补 168 条，两站共 336 条
+        verify(writer, times(336)).writeObs(captor.capture());
+        assertTrue(captor.getAllValues().stream().noneMatch(o -> o.getTs().equals(occupiedTs)),
+                "已有观测的整点不应被重写");
     }
 
     @Test
@@ -372,9 +413,9 @@ class DataSimulatorTest {
         ObsReader reader = mock(ObsReader.class);
         DataSimulator instance = simulatorWith(writer, reader, 0);
 
-        instance.backfillHistoryIfEmpty();
+        instance.backfillHistoryGaps();
 
-        verify(reader, never()).queryObservedRange(anyString(), any(), any());
+        verify(reader, never()).queryOccupiedTimestamps(anyString(), any(), any());
         verify(writer, never()).writeObs(any());
     }
 }

@@ -75,8 +75,9 @@ powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -MysqlPassword �
 脚本依次完成：准备中间件 → 启动 Redis / InfluxDB / Mosquitto / RabbitMQ → 初始化 InfluxDB → 建 `meteo` 库 → 启动后端。
 日志在 `tools/app.log`。之后重启可加 `-SkipSetup` 跳过下载步骤。
 
-演示用的历史观测（7 天逐小时）由后端启动时**按与实时链路相同的物理模型自动回填**，
-历史已存在则跳过，无需额外步骤；清空时序库（`scripts\clear-timeseries.ps1`）后重启即可重建。
+演示用的历史观测（7 天逐小时）由后端启动时**按与实时链路相同的物理模型自动补齐**，
+按整点只补缺失的时次、已有的不重写，无需额外步骤；停机造成的空洞也会在下次重启时补上。
+清空时序库（`scripts\clear-timeseries.ps1`）后重启即可重建。
 
 ### 第 2 步：启动前端
 

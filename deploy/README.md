@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
 说明：
 
 - **MySQL 不在脚本管理范围**：使用本机已装的 MySQL/MariaDB（XAMPP 亦可），脚本只负责创建 `meteo` 库，建表由 Flyway 在服务启动时自动完成。
-- **历史观测自动回填**：后端启动时若历史为空，会用与实时链路**相同的物理模型**补齐 7 天逐小时观测（由 `meteo.simulator.backfill-days` 配置，设 0 关闭）。因此不再需要单独的灌数脚本——两套模型互不相干时，衔接处会出现明显跳变被质控判为可疑，进而冻结质控数据、刷满审核队列。
+- **历史观测自动补齐**：后端启动时会用与实时链路**相同的物理模型**按整点补齐 7 天内**缺失**的逐小时观测，库中已有的时次不重写（由 `meteo.simulator.backfill-days` 配置，设 0 关闭）。首次启动等价于全量回填；此后任何停机造成的空洞都会在下次重启时自动补上——旧写法「历史为空才回填」只在空库时有效，停机超过 1 小时留下的空洞永远补不上。因此不再需要单独的灌数脚本——两套模型互不相干时，衔接处会出现明显跳变被质控判为可疑，进而冻结质控数据、刷满审核队列。
 - **数据全在仓库内**：InfluxDB 数据目录被显式指定为 `tools/influxdb/data`（默认是 `%USERPROFILE%\.influxdbv2`，已避免），删除 `tools/` 即彻底清理。
 - **唯一例外**：Mosquitto 官方安装包会注册一个 Windows 服务 `mosquitto`（开机自启）。`setup-middleware.ps1` 在有管理员权限时会自动移除；否则请手动执行：
   ```powershell

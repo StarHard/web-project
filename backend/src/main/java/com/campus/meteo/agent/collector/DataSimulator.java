@@ -45,7 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>降水为间歇事件</b>：由云量超过阈值触发，自然形成「下几小时、停一段」的形态。
  *       原实现逐条独立掷骰子（12%/条），在小时尺度上退化成「每小时都有雨」。</li>
  *   <li><b>局地偏差有界</b>：相距十几公里的站点实况应高度相关，偏差幅度控制在物理合理范围内。</li>
- *   <li><b>历史回填</b>：启动时若该站点历史观测为空，就用同一套模型补齐 N 天逐小时观测。
+ *   <li><b>历史回填</b>：启动时按整点补齐该站点 N 天内缺失的逐小时观测（首次启动即空库时
+ *       等价于全量回填，此后只补停机造成的空洞）。
  *       历史与实时出自同一份公式，正是本类承担回填的全部理由——旧做法由独立的 PowerShell
  *       脚本灌历史，两套模型互不相干，边界处会出现「历史说湿度 76%、实时说 94%」这类跳变，
  *       质控的时间一致性检验会如实把实时数据判为可疑，结果质控通过的数据长时间冻结、
@@ -325,30 +326,40 @@ public class DataSimulator {
     }
 
     /**
-     * 启动时用同一套物理模型回填历史观测（逐小时）。
+     * 启动时用同一套物理模型补齐历史观测（逐小时），按整点逐时判断、只补缺的那些。
      *
-     * <p>只在该站点的历史窗口内没有任何观测时才回填，因此重启不会重复写入。
-     * 区间末端留出 1 小时给实时链路，避免与刚写入的实时数据重叠。
+     * <p>之所以不是「历史为空才回填」：那只在库完全空时有效，任何超过 1 小时的停机
+     * 都会在序列里留下空洞，而重启后回填看到「已有观测」就整体跳过，空洞再也补不上，
+     * 趋势图与统计报表会长期缺一段。
+     *
+     * <p>缺口判定必须用 {@link ObsReader#queryOccupiedTimestamps}（任何质控标记都算已上报），
+     * 不能用 queryObservedRange（只认 passed/revised）——否则「有上报但被判可疑」的时次
+     * 会被当成缺测，再用 passed 值盖上去，把真实的质控问题掩盖掉。
+     *
+     * <p>区间末端留出 1 小时给实时链路，避免与刚写入的实时数据重叠。
      * 回填以 qc_flag=passed 直接落库：这些值本身就出自与实时相同的公式，
      * 再走一遍质控只会让启动变慢，且质控的 1 小时基准窗口也无从比对。
      *
      * <p>回填失败不阻断启动——实时链路不依赖历史数据。
      */
     @PostConstruct
-    void backfillHistoryIfEmpty() {
+    void backfillHistoryGaps() {
         if (backfillDays <= 0) {
             return;
         }
         Instant to = Instant.now().truncatedTo(ChronoUnit.HOURS).minus(1, ChronoUnit.HOURS);
         Instant from = to.minus(backfillDays, ChronoUnit.DAYS);
+        // Flux 的 range(stop:) 是开区间，等于 stop 的那个时刻查不出来。若直接以 to 作 stop，
+        // 最末一个整点每次启动都会被判成缺失并重写一遍（实测两站各多写 1 条），故 +1 秒。
+        Instant queryStop = to.plusSeconds(1);
         for (String stationCode : STATIONS) {
             try {
-                if (!obsReader.queryObservedRange(stationCode, from, to).isEmpty()) {
-                    log.info("历史观测已存在，跳过回填: station={}", stationCode);
-                    continue;
-                }
+                Set<Instant> occupied = obsReader.queryOccupiedTimestamps(stationCode, from, queryStop);
                 int written = 0;
                 for (Instant ts = from; !ts.isAfter(to); ts = ts.plus(1, ChronoUnit.HOURS)) {
+                    if (occupied.contains(ts)) {
+                        continue;
+                    }
                     obsWriter.writeObs(ObsData.builder()
                             .stationCode(stationCode)
                             .ts(ts)
@@ -357,7 +368,11 @@ public class DataSimulator {
                             .build());
                     written++;
                 }
-                log.info("历史回填完成: station={}, 条数={}, 区间={} ~ {}", stationCode, written, from, to);
+                if (written == 0) {
+                    log.info("历史观测完整，无需回填: station={}", stationCode);
+                } else {
+                    log.info("历史回填完成: station={}, 补入={}, 区间={} ~ {}", stationCode, written, from, to);
+                }
             } catch (Exception e) {
                 log.warn("历史回填失败，跳过该站点: station={}, err={}", stationCode, e.getMessage());
             }
