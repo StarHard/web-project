@@ -11,6 +11,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,8 @@ public class ForecastAgent {
     private static final int FORECAST_HOURS = 72;
     /** 历史样本长度（天） */
     private static final int HISTORY_DAYS = 7;
+    /** 逐日发布时次对齐用的时区（避免用 UTC 整数日，那样会切到本地 08:00） */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final StationMapper stationMapper;
     private final ObsReader obsReader;
@@ -82,8 +86,13 @@ public class ForecastAgent {
     public int backtest(Station station, int days) {
         int success = 0;
         Instant now = Instant.now();
+        // 发布时次对齐到「当日零点」：回算必须可重复执行。
+        // (目标时刻, issue) 是写入主键，若 issue 取 now - d 天这种随时钟移动的时刻，
+        // 每点一次「回算」就往库里新增一套发布记录，检验样本被重复计入、评分随之失真
+        // （实测连点两次后样本数由 147 涨到 291，其中混着两套口径不同的预报）。
+        Instant todayStart = now.atZone(ZONE).truncatedTo(ChronoUnit.DAYS).toInstant();
         for (int d = days; d >= 1; d--) {
-            Instant issueTime = now.minusSeconds((long) d * 86400);
+            Instant issueTime = todayStart.minus(d, ChronoUnit.DAYS);
             var history = obsReader.queryRange(station.getStationCode(),
                     issueTime.minusSeconds((long) HISTORY_DAYS * 86400), issueTime);
             if (history.size() < 3) {
