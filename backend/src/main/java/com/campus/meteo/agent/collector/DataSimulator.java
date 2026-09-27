@@ -36,6 +36,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li><b>日变化</b>：气温按正弦（15 时最高、日出前最低）；辐射按太阳高度角的钟形曲线，
  *       夜间严格为 0；日长与辐射峰值随季节变化。</li>
+ *   <li><b>气候标定</b>：年均气温与年振幅按站点所在地闽侯（福州）口径取值
+ *       （基线 21.3℃、年振幅 9.0℃、日较差约 8.4℃），不是通用温带口径；
+ *       云量对气温的削减只在白天生效。</li>
  *   <li><b>温湿反相</b>：湿度与气温反相（越热越干），这是真实的日变化特征。</li>
  *   <li><b>天气过程</b>：一个缓慢的「湿度/扰动」通道同时驱动云量、气压、风速——
  *       云量高则辐射被削减、气压降低、风速抬升、能见度下降，符合降水天气的物理图景。</li>
@@ -69,12 +72,17 @@ public class DataSimulator {
     private static final double[] WAVE_PERIOD_HOURS = {7.3, 19.1, 41.7, 83.3};
     private static final double[] WAVE_WEIGHTS = {1.0, 0.72, 0.45, 0.30};
 
-    /** 气温年变化：年均 18.5℃、年振幅 11.5℃（1 月约 7℃、7 月约 30℃、9 月约 23℃） */
-    private static final double TEMP_ANNUAL_MEAN = 18.5;
-    private static final double TEMP_ANNUAL_AMPLITUDE = 11.5;
-    /** 气温日变化振幅 ±5℃（日较差约 10℃） */
-    private static final double TEMP_DIURNAL_AMPLITUDE = 5.0;
-    /** 天气过程带来的气温起伏 ±2.5℃；云量对气温的削减（阴天白天升温慢） */
+    /** 气温年变化：按站点所在地闽侯（福州）口径标定。
+     *  福州年均气温 20.4℃、年振幅 9.0℃，但云量削减只作用于白天、平均把气温拉低约 0.45℃，
+     *  故基线取 21.3℃ 才让实现值回到实况——1 月约 12.0℃、7 月约 29.7℃、9 月约 26.5℃
+     *  （福州实况 11.5 / 29.5 / 26.5）。
+     *  原值 18.5 / 11.5 是温带内陆口径，站点迁到闽侯后夜间最低温比实况低 5~6℃。 */
+    private static final double TEMP_ANNUAL_MEAN = 21.3;
+    private static final double TEMP_ANNUAL_AMPLITUDE = 9.0;
+    /** 气温日变化振幅 ±4.2℃。福州 9 月下旬实况日较差约 7.3℃，
+     *  取 8.4℃ 再扣掉白天云量削减后的周均值才落在这个量级（±3.8 会偏平）。 */
+    private static final double TEMP_DIURNAL_AMPLITUDE = 4.2;
+    /** 天气过程带来的气温起伏 ±2.5℃；云量对气温的削减（仅白天生效，见 computeElements） */
     private static final double TEMP_SYNOPTIC_AMPLITUDE = 2.5;
     private static final double TEMP_CLOUD_COOLING = 2.6;
 
@@ -156,9 +164,11 @@ public class DataSimulator {
             // 尖峰只注入实时链路：回填历史必须是干净数据，否则会把 -50℃ 这种不可能的值
             // 以 qc_flag=passed 直接写进时序库——它不经过质控，也就没有人工审核兜底
             maybeInjectSpike(stationCode, elements, now);
+            // 风向按 1 位小数上报，与 computeElements 的 round1 口径一致。
+            // 原模板写 %.0f，导致实时链路存整数、回填存 1 位小数，同一条曲线里混着两种精度
             String payload = """
                     {"stationCode":"%s","ts":%d,"elements":{
-                    "temp":%.1f,"humi":%.1f,"pres":%.1f,"wind_speed":%.1f,"wind_dir":%.0f,
+                    "temp":%.1f,"humi":%.1f,"pres":%.1f,"wind_speed":%.1f,"wind_dir":%.1f,
                     "rain":%.1f,"rad":%.1f,"vis":%.1f,"evap":%.2f}}
                     """.formatted(stationCode, now,
                     elements.get("temp"), elements.get("humi"), elements.get("pres"),
@@ -190,6 +200,16 @@ public class DataSimulator {
         // 日变化相位：15 时取峰值
         double diurnal = 2 * Math.PI * (hourOfDay - 9) / 24;
 
+        // 日长与日出日落随季节变化；同时给出白昼权重 daylight（夜间 0、正午附近 1）。
+        // 辐射与「云量削减气温」都依赖它——真实大气里云在夜间是保温的
+        // （抑制长波辐射降温），若全天扣温会把夜间最低温再压低一档。
+        double dayLength = DAY_LENGTH_MEAN + DAY_LENGTH_AMPLITUDE * seasonal;
+        double sunrise = 12.0 - dayLength / 2.0;
+        double sunset = 12.0 + dayLength / 2.0;
+        double daylight = hourOfDay >= sunrise && hourOfDay <= sunset
+                ? Math.sin(Math.PI * (hourOfDay - sunrise) / dayLength)
+                : 0.0;
+
         // 天气过程通道：同一个「扰动强度」驱动云量、气压与风速，保证三者物理上同源
         double wet = slowWave("wet", epochMillis);
         double cloud = clamp(0.5 + 0.62 * wet, 0.0, 1.0);
@@ -202,7 +222,7 @@ public class DataSimulator {
         double temp = TEMP_ANNUAL_MEAN + TEMP_ANNUAL_AMPLITUDE * seasonal
                 + TEMP_DIURNAL_AMPLITUDE * Math.sin(diurnal)
                 + TEMP_SYNOPTIC_AMPLITUDE * slowWave("temp", epochMillis)
-                - TEMP_CLOUD_COOLING * cloud
+                - TEMP_CLOUD_COOLING * cloud * daylight
                 + tempOffset + noise(0.25);
         temp = clamp(temp, -40.0, 50.0);
 
@@ -230,15 +250,9 @@ public class DataSimulator {
                 + 14.0 * slowWave("dir", epochMillis)
                 + stationOffset(stationCode, "wind_dir"));
 
-        // 辐射：夜间严格为 0（不叠噪声，否则会凭空出现非零辐射），白天按太阳高度角取钟形曲线
-        double dayLength = DAY_LENGTH_MEAN + DAY_LENGTH_AMPLITUDE * seasonal;
-        double sunrise = 12.0 - dayLength / 2.0;
-        double sunset = 12.0 + dayLength / 2.0;
+        // 辐射：夜间严格为 0（daylight 为 0 时不叠噪声，否则会凭空出现非零辐射）
         double radPeak = RAD_PEAK_MEAN + RAD_PEAK_ANNUAL_AMPLITUDE * seasonal;
-        double radClear = 0.0;
-        if (hourOfDay >= sunrise && hourOfDay <= sunset) {
-            radClear = radPeak * Math.sin(Math.PI * (hourOfDay - sunrise) / dayLength);
-        }
+        double radClear = radPeak * daylight;
         double rad = radClear <= 0.0
                 ? 0.0
                 : Math.max(0.0, radClear * (1.0 - RAD_CLOUD_ATTENUATION * cloud) * (1.0 + noise(0.03)));
