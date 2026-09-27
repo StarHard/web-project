@@ -20,7 +20,8 @@ import java.util.TreeMap;
  *  - 小时气候态：由近期（最长7天）历史观测按"小时-of-day"平均得到，刻画日变化曲线
  *  - 近期距平：最近3个时次观测均值 - 起报时刻气候态，刻画当前偏离程度
  *  - 衰减因子：exp(-h/36)，距平影响随时效衰减（持续性假设）
- * 风向采用矢量平均；降水以气候态小时发生率×湿度距平修正生成概率与量级
+ * 风向采用矢量平均；降水以气候态小时发生率定概率、湿润样本均值定量级，
+ * 概率不足阈值即判无雨（不输出「所有日子的平均雨强」）
  * 后续可无缝替换为 LSTM 等机器学习模型（实现 ForecastModel 接口即可）
  */
 @Slf4j
@@ -30,6 +31,11 @@ public class StatisticalForecastModel {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     /** 参与预报的要素（风向单独处理） */
     private static final List<String> ELEMENTS = List.of("temp", "humi", "pres", "wind_speed");
+
+    /** 判定「有雨」的降水量阈值（mm/h），与预报检验里 TS 的阈值口径一致 */
+    private static final double RAIN_EVENT_MM = 0.1;
+    /** 降水概率达到该值（%）才给出雨量，否则判为无雨 */
+    private static final double RAIN_POP_THRESHOLD = 40.0;
 
     /**
      * 生成 0-72h 逐小时预报
@@ -76,14 +82,19 @@ public class StatisticalForecastModel {
                 double blended = blendAngle(dirClim, base.getElements().getOrDefault("wind_dir", dirClim), 0.7);
                 point.put("wind_dir", round(blended));
             }
-            // 降水：气候态发生率 × 湿度距平修正
-            Double rainClim = resolve(climatology, globalMeans, "rain", hourOfDay);
+            // 降水：气候态发生率定概率、湿润样本均值定量级，概率不足阈值即判无雨。
+            // rain 的语义是「预计这次下多少」，不是「所有日子的平均雨强」——后者会让
+            // 每个时次都报出 0.1~0.9mm 的小雨（实测 72 个时次里 46 个非零，而实况只有
+            // 约 20% 的时次有雨，降水检验空报率高达 0.78）
+            Double rainFreq = resolve(climatology, globalMeans, "rain_freq", hourOfDay);
+            Double rainWet = resolve(climatology, globalMeans, "rain_wet", hourOfDay);
             Double humiOffset = anomaly.get("humi");
-            if (rainClim != null) {
-                double baseRate = rainClim > 0.1 ? 0.6 : 0.08;
+            if (rainFreq != null) {
                 double factor = humiOffset != null ? clamp(1 + humiOffset / 100.0, 0.3, 2.0) : 1.0;
-                double pop = clamp(baseRate * factor * 100, 2, 95);
-                double rain = rainClim * factor * decay;
+                double pop = clamp(rainFreq * factor * 100, 2, 95);
+                double rain = pop >= RAIN_POP_THRESHOLD && rainWet != null
+                        ? rainWet * factor * decay
+                        : 0.0;
                 point.put("pop", round(pop));
                 point.put("rain", round(Math.max(0, rain)));
             }
@@ -143,6 +154,27 @@ public class StatisticalForecastModel {
         } else if (climatology.get("wind_dir") != null && !climatology.get("wind_dir").isEmpty()) {
             means.put("wind_dir", climatology.get("wind_dir").values().iterator().next());
         }
+        // 降水：发生率与湿润样本均值（与小时气候态口径一致的全局兜底值）
+        int rainSamples = 0;
+        int rainWetCount = 0;
+        double rainWetSum = 0;
+        for (ObsData obs : history) {
+            Double v = obs.getElements().get("rain");
+            if (v == null) {
+                continue;
+            }
+            rainSamples++;
+            if (v >= RAIN_EVENT_MM) {
+                rainWetCount++;
+                rainWetSum += v;
+            }
+        }
+        if (rainSamples > 0) {
+            means.put("rain_freq", (double) rainWetCount / rainSamples);
+            if (rainWetCount > 0) {
+                means.put("rain_wet", rainWetSum / rainWetCount);
+            }
+        }
         return means;
     }
 
@@ -187,6 +219,22 @@ public class StatisticalForecastModel {
             }
         });
         climatology.put("wind_dir", dirMean);
+        // 降水要拆成两个统计量：发生率（该钟点下雨的概率）与湿润样本均值（下的时候下多少）。
+        // 只留「所有日子的平均雨强」会让预报量在每个时次都非零，降水因而失去事件性
+        Map<Integer, List<Double>> rainByHour = buckets.get("rain");
+        Map<Integer, Double> rainFreq = new HashMap<>();
+        Map<Integer, Double> rainWet = new HashMap<>();
+        if (rainByHour != null) {
+            rainByHour.forEach((hour, values) -> {
+                List<Double> wet = values.stream().filter(v -> v >= RAIN_EVENT_MM).toList();
+                rainFreq.put(hour, values.isEmpty() ? 0.0 : (double) wet.size() / values.size());
+                if (!wet.isEmpty()) {
+                    rainWet.put(hour, wet.stream().mapToDouble(Double::doubleValue).average().orElse(0));
+                }
+            });
+        }
+        climatology.put("rain_freq", rainFreq);
+        climatology.put("rain_wet", rainWet);
         return climatology;
     }
 
