@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -305,6 +306,35 @@ class DataSimulatorTest {
             maxDiff = Math.max(maxDiff, Math.abs(campus.get(i).values().get("temp") - farm.get(i).values().get("temp")));
         }
         assertTrue(maxDiff < 4.0, "两站气温差应保持在物理合理范围内，实际最大 " + maxDiff + "℃");
+    }
+
+    @Test
+    @DisplayName("相邻两站降水不相同但同源：既有同时下雨的时次，也各自有独立的降水时次")
+    void rainDiffersBetweenNeighboringStations() {
+        List<Double> campusRain = oneWeek("CAMPUS01").stream()
+                .map(s -> s.values().get("rain")).toList();
+        List<Double> farmRain = oneWeek("FARM02").stream()
+                .map(s -> s.values().get("rain")).toList();
+
+        assertNotEquals(campusRain, farmRain,
+                "降水是空间上最不连续的要素，相邻两站不应逐时次完全相同");
+
+        int both = 0;
+        int campusOnly = 0;
+        int farmOnly = 0;
+        for (int i = 0; i < campusRain.size(); i++) {
+            boolean wetCampus = campusRain.get(i) > 0.05;
+            boolean wetFarm = farmRain.get(i) > 0.05;
+            if (wetCampus && wetFarm) {
+                both++;
+            } else if (wetCampus) {
+                campusOnly++;
+            } else if (wetFarm) {
+                farmOnly++;
+            }
+        }
+        assertTrue(both > 0, "大尺度降水过程应让两站同时有雨，否则降水失去了天气背景的耦合");
+        assertTrue(campusOnly + farmOnly > 0, "局地差异应让两站各有独立的降水时次");
     }
 
     // ---------------- 历史回填 ----------------

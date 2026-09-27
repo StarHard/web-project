@@ -131,11 +131,16 @@ public class DataSimulator {
 
     /**
      * 站点局地偏差（相对大尺度天气背景）。幅度有界且恒定：
-     * 农业站略偏暖、湿度略低，与历史演示数据的口径保持一致。
+     * 农业站略偏暖、湿度略低、降水略多略强，与历史演示数据的口径保持一致。
+     *
+     * <p>rain_scale 是乘性系数（缺省 1.0），与其余加性偏移分开存放：若混在
+     * {@link #stationOffset} 的加性口径里，新增站点会因为取到缺省值 0 而把雨量压成全零。
      */
     private static final Map<String, Map<String, Double>> STATION_OFFSETS = Map.of(
-            "CAMPUS01", Map.of("temp", 0.0, "humi", 0.0, "pres", 0.0, "wind_speed", -0.3, "wind_dir", -8.0),
-            "FARM02", Map.of("temp", 1.2, "humi", -2.0, "pres", -0.4, "wind_speed", 0.4, "wind_dir", 10.0));
+            "CAMPUS01", Map.of("temp", 0.0, "humi", 0.0, "pres", 0.0, "wind_speed", -0.3, "wind_dir", -8.0,
+                    "rain_threshold", 0.0, "rain_scale", 1.0),
+            "FARM02", Map.of("temp", 1.2, "humi", -2.0, "pres", -0.4, "wind_speed", 0.4, "wind_dir", 10.0,
+                    "rain_threshold", -0.06, "rain_scale", 1.15));
 
     private final CollectorAgent collectorAgent;
     private final ObsWriter obsWriter;
@@ -215,9 +220,16 @@ public class DataSimulator {
         double wet = slowWave("wet", epochMillis);
         double cloud = clamp(0.5 + 0.62 * wet, 0.0, 1.0);
         // 降水强度因子（0~1）：云量超过阈值后才起雨。同时用于湿度的额外抬升，
-        // 保证「有雨时湿度明显更高」这条物理关系成立，而不是只与云量弱相关
-        double rainFactor = Math.max(0.0, cloud - CLOUD_RAIN_THRESHOLD) / (1.0 - CLOUD_RAIN_THRESHOLD);
-        double rain = rainFactor > 0.0 ? round1(0.3 + rainFactor * RAIN_MAX_INTENSITY) : 0.0;
+        // 保证「有雨时湿度明显更高」这条物理关系成立，而不是只与云量弱相关。
+        // 起雨阈值与雨强都带站点系数：降水是空间上最不连续的要素，而原实现只由共享的
+        // wet 通道决定、既无站点偏移也无噪声，导致相邻两站降水逐时次完全相同
+        // （实测 167/167 个时次一致、7 天累计雨量同为 88.3 mm），多站对比失去意义。
+        double rainThreshold = clamp(CLOUD_RAIN_THRESHOLD + stationOffset(stationCode, "rain_threshold"),
+                0.0, 0.95);
+        double rainFactor = Math.max(0.0, cloud - rainThreshold) / (1.0 - rainThreshold);
+        double rain = rainFactor > 0.0
+                ? round1((0.3 + rainFactor * RAIN_MAX_INTENSITY) * stationScale(stationCode, "rain_scale"))
+                : 0.0;
 
         double tempOffset = stationOffset(stationCode, "temp");
         double temp = TEMP_ANNUAL_MEAN + TEMP_ANNUAL_AMPLITUDE * seasonal
@@ -319,6 +331,12 @@ public class DataSimulator {
     private double stationOffset(String stationCode, String element) {
         Map<String, Double> offsets = STATION_OFFSETS.get(stationCode);
         return offsets == null ? 0.0 : offsets.getOrDefault(element, 0.0);
+    }
+
+    /** 乘性站点系数（缺省 1.0）：与加性偏移分开口径，避免缺省值 0 把结果压成零 */
+    private double stationScale(String stationCode, String element) {
+        Map<String, Double> offsets = STATION_OFFSETS.get(stationCode);
+        return offsets == null ? 1.0 : offsets.getOrDefault(element, 1.0);
     }
 
     private double noise(double amplitude) {
