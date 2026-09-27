@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { stationMap, type StationMapPoint } from '@/api/monitor'
 import { ALERT_LEVEL_COLORS, ALERT_LEVEL_LABELS } from '@/utils/format'
 
 const AMAP_KEY = import.meta.env.VITE_AMAP_KEY
+const AMAP_SECURITY_KEY = import.meta.env.VITE_AMAP_SECURITY_KEY
 
 const points = ref<StationMapPoint[]>([])
 const mapElement = ref<HTMLDivElement>()
@@ -22,6 +23,11 @@ function loadAmap(): Promise<any> {
     if (existing) {
       resolve(existing)
       return
+    }
+    // JS API 2.0 要求 2021-12 之后申请的 Key 必须配套安全密钥，须在脚本加载前挂到全局
+    if (AMAP_SECURITY_KEY) {
+      const w = window as any
+      w._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY_KEY }
     }
     const script = document.createElement('script')
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`
@@ -49,9 +55,14 @@ async function initMap(): Promise<void> {
   try {
     const AMap = await loadAmap()
     const center = points.value[0]
+    // 容器由 v-show 控制：必须先让它可见，AMap 才量得到真实尺寸。
+    // 在 display:none 的容器里建图会让 setFitView 按 0×0 算出退化视野，
+    // 表现就是地图缩到省一级、所有站点标记挤成一团。
+    mapReady.value = true
+    await nextTick()
     const map = new AMap.Map(mapElement.value, {
       zoom: 12,
-      center: center ? [center.longitude, center.latitude] : [116.397, 39.909],
+      center: center ? [center.longitude, center.latitude] : [119.1925, 26.0652],
       mapStyle: 'amap://styles/dark'
     })
     points.value.forEach((point) => {
@@ -63,11 +74,14 @@ async function initMap(): Promise<void> {
       marker.setTitle(`${point.name}${point.alertLevel > 0 ? ` · ${ALERT_LEVEL_LABELS[point.alertLevel]}预警` : ''}`)
       map.add(marker)
     })
+    // 进入页面即自动缩放到包含全部站点的视野；单站点固定到街区级，避免极限放大
     if (points.value.length > 1) {
-      map.setFitView()
+      map.setFitView(null, false, [80, 80, 80, 80], 15)
+    } else if (points.value.length === 1) {
+      map.setZoomAndCenter(15, [points.value[0].longitude, points.value[0].latitude])
     }
-    mapReady.value = true
   } catch {
+    mapReady.value = false
     mapNotice.value = '高德地图加载失败（请检查 Key 与网络），已降级为站点列表视图'
   }
 }
