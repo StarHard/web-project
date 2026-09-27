@@ -26,7 +26,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * 预报服务接口
@@ -54,22 +56,31 @@ public class ForecastController {
                                          @RequestParam(defaultValue = "72") int range) {
         range = Math.min(Math.max(range, 1), 72);
         Instant now = Instant.now();
-        Map<Instant, Map<String, Double>> series =
-                fcstReader.query(stationCode, model, now, now.plusSeconds((long) range * 3600));
+        // 用 queryAll 取原始发布记录：query() 内部只保留最新一次发布，却把发布时刻丢掉了。
+        // 原实现只能把循环里最后一个「目标时刻」当作发布时间，接口因而返回一个未来时间
+        // （9-27 查询会显示「发布时间 9-30」）。这里自行按 issue 过滤，顺带取回真正的发布时刻。
+        List<FcstReader.FcstPoint> published =
+                fcstReader.queryAll(stationCode, model, now, now.plusSeconds((long) range * 3600));
+        long latestIssue = published.stream().mapToLong(FcstReader.FcstPoint::issue).max().orElse(Long.MIN_VALUE);
+
+        Map<Instant, Map<String, Double>> series = new TreeMap<>();
+        for (FcstReader.FcstPoint point : published) {
+            if (point.issue() == latestIssue) {
+                series.put(point.targetTime(), point.elements());
+            }
+        }
 
         var points = new ArrayList<ForecastResp.Point>();
-        Instant latestIssue = null;
         for (var entry : series.entrySet()) {
             points.add(ForecastResp.Point.builder()
                     .time(TIME_FMT.format(entry.getKey()))
                     .elements(entry.getValue())
                     .build());
-            latestIssue = entry.getKey();
         }
         return Result.ok(ForecastResp.builder()
                 .stationCode(stationCode)
                 .model(model)
-                .issueTime(latestIssue != null ? TIME_FMT.format(latestIssue) : null)
+                .issueTime(latestIssue == Long.MIN_VALUE ? null : TIME_FMT.format(Instant.ofEpochSecond(latestIssue)))
                 .rangeHours(range)
                 .points(points)
                 .build());
