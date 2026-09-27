@@ -56,6 +56,10 @@ AI 部分的工程底线（贯穿上述四项）：
 
 ## 三、快速开始（Windows）
 
+> **平台覆盖**：下面的脚本是 PowerShell，**已在 Windows 11 上完整实测**。Linux / macOS 没有已验证的上手路径——
+> 中间件可改用 [deploy/docker-compose.yml](deploy/docker-compose.yml)（该方案自身标注为「未实测验证」，
+> 见 [deploy/README.md](deploy/README.md)），后端与前端仍需按第 1、2 步单独启动。
+
 ### 前置条件
 
 - **JDK 17+**（脚本会自动探测 `JAVA_HOME`）
@@ -86,6 +90,17 @@ cd frontend
 npm install
 npm run dev
 ```
+
+**可选：配置高德地图 Key**（不配置时「站点地图」页降级为站点列表视图，其余页面不受影响）
+
+「站点地图」依赖高德地图 JS API。在 `frontend/` 下新建 `.env.local`（该文件已被 `.gitignore` 忽略，不会入库）：
+
+```
+VITE_AMAP_KEY=你的Key
+VITE_AMAP_SECURITY_KEY=你的安全密钥
+```
+
+两项都在[高德开放平台](https://lbs.amap.com)申请：创建应用后**服务平台必须选「Web端(JS API)」**——选成「Web服务」是给 REST 接口用的，浏览器里加载会报 `INVALID_USER_KEY`；安全密钥与 Key 并列显示，**JS API 2.0 必须配套使用**，只填 Key 不填安全密钥会报 `INVALID_USER_SCODE`、地图加载不出来。改完要重启 `npm run dev`，Vite 只在启动时读环境变量。
 
 ### 第 3 步：访问
 
@@ -147,7 +162,7 @@ software/
 │       └── security/  # JWT 与 RBAC
 ├── frontend/          # Vue3 前端
 │   └── src/{api,views,components,stores,router,utils}
-├── scripts/           # 便携式环境脚本（启动 / 停止 / 初始化中间件 / 注入演示数据）
+├── scripts/           # 便携式环境脚本（下载初始化中间件 / 启动 / 停止 / 重置时序库）
 └── deploy/            # Docker Compose 与部署说明
 ```
 
@@ -180,7 +195,7 @@ npm run type-check
 npm run build
 ```
 
-当前测试规模：**126 个单元测试用例全部通过**，覆盖质控判定、插补算法、告警升级、预报模型、多站对比、AI 工具集与知识库等核心逻辑。
+当前测试规模：**148 个单元测试用例全部通过**（16 个测试类），覆盖质控判定、插补算法、告警升级、气象数据模拟、预报回算与检验、多站对比、AI 工具集与知识库等核心逻辑。
 
 ---
 
